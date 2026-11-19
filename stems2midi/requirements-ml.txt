@@ -1,0 +1,19 @@
+# ML stack for stems2midi. Deliberately NOT named requirements.txt so the
+# FeedBack plugin loader doesn't auto-install ~2 GB of PyTorch at startup.
+# Install from the plugin screen (Status → Install) or manually:
+#   python -m pip install -r requirements-ml.txt
+#
+# NVIDIA GPU on Windows: PyPI's torch wheel is CPU-only there. Install the
+# CUDA build first, using the command from https://pytorch.org/get-started/locally
+# (e.g. pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128),
+# then install this file.
+torch>=2.1
+demucs>=4.0.1
+librosa>=0.10
+soundfile>=0.12
+mido>=1.3
+numpy
+# lyrics: syllables for pt / en / es … (without it a simple rule-based split is used)
+pyphen>=0.14
+# Optional polyphonic transcriber (guitar/piano MIDI); may need Python 3.10/3.11:
+# basic-pitch>=0.3

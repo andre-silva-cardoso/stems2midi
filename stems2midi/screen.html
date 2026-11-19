@@ -1,0 +1,198 @@
+<!-- Stems → MIDI — screen.html
+     FeedBack injects this into div#plugin-stems2midi.screen.
+     Do NOT add an outer wrapper div with class="screen". -->
+<div class="s2m-root">
+
+  <header class="s2m-head">
+    <div>
+      <h1 class="s2m-title">Stems <span class="s2m-arrow">→</span> MIDI</h1>
+      <p class="s2m-sub">Split a song into bass, guitar &amp; more with Demucs, then transcribe the bass line to a MIDI file.</p>
+    </div>
+  </header>
+
+  <!-- ── engine status ─────────────────────────────────────────────── -->
+  <section class="s2m-card" id="s2m-status">
+    <div class="s2m-row s2m-between">
+      <h2 class="s2m-h2">Engine</h2>
+      <div class="s2m-row">
+        <button class="s2m-btn s2m-ghost" id="s2m-refresh" type="button" title="Re-check dependencies">Re-check</button>
+        <button class="s2m-btn s2m-ghost" id="s2m-toggle-settings" type="button" aria-expanded="false">Python…</button>
+      </div>
+    </div>
+    <div class="s2m-pills" id="s2m-pills"><span class="s2m-dim">Checking…</span></div>
+    <div class="s2m-hint" id="s2m-status-hint" hidden></div>
+
+    <div class="s2m-settings" id="s2m-settings" hidden>
+      <label class="s2m-label" for="s2m-python">Python interpreter used for separation</label>
+      <div class="s2m-row">
+        <input id="s2m-python" class="s2m-input s2m-grow" type="text" spellcheck="false"
+               placeholder="Empty = FeedBack's own Python. e.g. C:\stems-venv\Scripts\python.exe">
+        <button class="s2m-btn" id="s2m-save-python" type="button">Save</button>
+      </div>
+      <p class="s2m-small s2m-dim">Point this at a separate venv if you want a CUDA build of PyTorch
+        (see the plugin README). Current: <code id="s2m-python-current" class="s2m-code"></code></p>
+      <p class="s2m-small s2m-dim" id="s2m-config-info"></p>
+    </div>
+
+    <div class="s2m-install" id="s2m-install" hidden>
+      <div class="s2m-row s2m-between">
+        <span class="s2m-small" id="s2m-install-state"></span>
+        <button class="s2m-btn s2m-primary" id="s2m-install-btn" type="button">Install dependencies (~2 GB)</button>
+      </div>
+      <pre class="s2m-log" id="s2m-install-log" hidden></pre>
+    </div>
+  </section>
+
+  <!-- ── new job ────────────────────────────────────────────────────── -->
+  <section class="s2m-card">
+    <h2 class="s2m-h2">New separation</h2>
+
+    <label class="s2m-drop" id="s2m-drop" tabindex="0">
+      <input type="file" id="s2m-file" accept="audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.wma,.aif,.aiff" hidden>
+      <svg viewBox="0 0 24 24" class="s2m-drop-icon" aria-hidden="true"><path d="M12 3v12m0-12 4 4m-4-4-4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span id="s2m-drop-text"><strong>Drop an audio file</strong> or click to choose — MP3, WAV, FLAC, OGG, M4A</span>
+    </label>
+
+    <div class="s2m-grid">
+      <div>
+        <label class="s2m-label" for="s2m-model">Model</label>
+        <select id="s2m-model" class="s2m-input">
+          <option value="htdemucs_6s">htdemucs_6s · 6 stems (+guitar, piano)</option>
+          <option value="htdemucs">htdemucs · 4 stems, fastest</option>
+          <option value="htdemucs_ft">htdemucs_ft · best bass, 4× slower</option>
+        </select>
+      </div>
+      <div>
+        <label class="s2m-label" for="s2m-device">Device</label>
+        <select id="s2m-device" class="s2m-input">
+          <option value="auto">Auto (GPU if available)</option>
+          <option value="cpu">CPU</option>
+          <option value="cuda">NVIDIA GPU (CUDA)</option>
+          <option value="mps">Apple GPU (MPS)</option>
+        </select>
+      </div>
+      <div>
+        <label class="s2m-label" for="s2m-quantize">Quantize MIDI</label>
+        <select id="s2m-quantize" class="s2m-input">
+          <option value="0">Off (keep the feel)</option>
+          <option value="8">1/8 notes</option>
+          <option value="16">1/16 notes</option>
+          <option value="32">1/32 notes</option>
+        </select>
+      </div>
+      <div>
+        <label class="s2m-label" for="s2m-bpm">Tempo (BPM)</label>
+        <input id="s2m-bpm" class="s2m-input" type="number" min="20" max="400" step="0.1" placeholder="Auto-detect">
+      </div>
+      <div>
+        <label class="s2m-label" for="s2m-tuning">Bass tuning (for the tab)</label>
+        <select id="s2m-tuning" class="s2m-input">
+          <option value="auto">Auto · 4-string E or 5-string B</option>
+          <option value="4">4-string · E A D G</option>
+          <option value="5">5-string · B E A D G</option>
+          <option value="5c">5-string · E A D G C</option>
+          <option value="drop-d">4-string · Drop D</option>
+          <option value="eb">4-string · E♭ standard</option>
+          <option value="d-standard">4-string · D standard</option>
+          <option value="drop-c">4-string · Drop C</option>
+          <option value="5-drop-a">5-string · Drop A</option>
+          <option value="custom">Custom…</option>
+          <option value="none">No tab</option>
+        </select>
+      </div>
+      <div>
+        <label class="s2m-label" for="s2m-slap">Slap sections (optional)</label>
+        <input id="s2m-slap" class="s2m-input" type="text" spellcheck="false"
+               placeholder="all  ·  auto  ·  0:32-1:05, 2:10-2:40  ·  verse, chorus" title="Parts of the song played slap: attacked notes there are marked slap (low strings) or pop (two highest strings). Times, part names from Song parts (every verse / chorus), or 'auto' (experimental guess — check it).">
+      </div>
+      <div class="s2m-wide">
+        <label class="s2m-label" for="s2m-parts">Song parts (optional)</label>
+        <input id="s2m-parts" class="s2m-input" type="text" spellcheck="false"
+               placeholder="auto  ·  intro=0:00-0:21, verse=0:21-0:42, chorus=0:42-1:05" title="First occurrence of each part (Rocksmith names: intro, verse, prechorus, chorus, bridge, solo, outro, riff…); repeats are found by their notes and become Rocksmith sections in the XML. 'auto' finds the parts in the audio and guesses their names — check them (Edit these parts).">
+      </div>
+      <div>
+        <label class="s2m-label" for="s2m-only">Bass plays only in (optional)</label>
+        <input id="s2m-only" class="s2m-input" type="text" spellcheck="false" placeholder="2:50-5:15  ·  40-90 (bars)"
+               title="When an orchestra, piano or synth fills the bass stem before the bass guitar comes in: notes outside these times (song time) or bars (as in EOF) are dropped.">
+        <label class="s2m-small s2m-dim" title="Ballads / long held notes over strings or pads: a repeated note counts only when it is clearly plucked again, so one long note isn't cut into many."><input type="checkbox" id="s2m-sustained"> long held notes (ballad)</label>
+      </div>
+      <div class="s2m-wide">
+        <label class="s2m-label" for="s2m-notes-file">Bass notes from another transcriber (optional)</label>
+        <select id="s2m-notes-use" class="s2m-input s2m-inline" style="margin:0 0 .3em 0" title="Where to use the file's notes: everywhere, only in the bars the review finds doubtful in the built-in transcription, or in the bars / times you give">
+          <option value="all">use the file everywhere</option>
+          <option value="doubtful">only in the doubtful bars</option>
+          <option value="bars">only in these bars…</option>
+        </select>
+        <input id="s2m-notes-bars" class="s2m-input" type="text" spellcheck="false" hidden placeholder="bars as in EOF: 12-30, 45-60   or times: 1:02-1:30">
+        <input id="s2m-notes-file" class="s2m-input" type="file" accept=".musicxml,.xml,.mxl,.mid,.midi"
+               title="MusicXML or MIDI from AnthemScore, Guitar Pro, MuseScore…: its notes are lined up with the bass stem (tempo drift included) and used instead of the built-in transcription — tab, slap, parts and Rocksmith XML as usual. Useful when the bass has almost no fundamental and the built-in tracker loses notes.">
+      </div>
+      <div class="s2m-wide">
+        <label class="s2m-label" for="s2m-lyrics">Lyrics (optional) → UltraStar .txt + Rocksmith vocals XML
+          <select id="s2m-language" class="s2m-input s2m-inline" title="Language of the lyrics (for splitting syllables)">
+            <option value="">language: auto</option><option value="pt">Português</option><option value="en">English</option>
+            <option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="it">Italiano</option>
+          </select></label>
+        <textarea id="s2m-lyrics" class="s2m-input s2m-lyrics" rows="3" spellcheck="false"
+                  placeholder="One sung line per line, every repeat written out (no [Chorus] x2). Syllables are split automatically, or mark them yourself: un-faith-ful" title="Lined up with the vocals stem: you get vocals.ultrastar.txt (open in UltraStar Creator to fine-tune, or import in EOF: File → Import → Lyrics) and vocals_RS2.xml (Rocksmith vocals for DLC Builder). Times follow lead_silence like the bass XML."></textarea>
+      </div>
+      <div id="s2m-tuning-custom-box" hidden>
+        <label class="s2m-label" for="s2m-tuning-custom">Custom tuning (low → high)</label>
+        <input id="s2m-tuning-custom" class="s2m-input" type="text" spellcheck="false"
+               placeholder="e.g. C#1 F#1 B1 E2   or   -1,-1,-1,-1">
+      </div>
+    </div>
+
+    <div class="s2m-label">Stems to save</div>
+    <div class="s2m-chips" id="s2m-stems">
+      <label class="s2m-chip"><input type="checkbox" value="bass" checked><span>Bass</span></label>
+      <label class="s2m-chip"><input type="checkbox" value="guitar" checked><span>Guitar</span></label>
+      <label class="s2m-chip"><input type="checkbox" value="drums"><span>Drums</span></label>
+      <label class="s2m-chip"><input type="checkbox" value="vocals"><span>Vocals</span></label>
+      <label class="s2m-chip"><input type="checkbox" value="piano"><span>Piano</span></label>
+      <label class="s2m-chip"><input type="checkbox" value="other"><span>Other</span></label>
+    </div>
+
+    <div class="s2m-label">Transcribe to MIDI</div>
+    <div class="s2m-chips" id="s2m-midi">
+      <label class="s2m-chip"><input type="checkbox" value="bass" checked><span>Bass</span></label>
+      <label class="s2m-chip"><input type="checkbox" value="guitar"><span>Guitar</span></label>
+      <label class="s2m-chip"><input type="checkbox" value="vocals"><span>Vocals</span></label>
+      <label class="s2m-chip"><input type="checkbox" value="piano"><span>Piano</span></label>
+    </div>
+
+    <details class="s2m-more">
+      <summary>More options</summary>
+      <div class="s2m-grid">
+        <div>
+          <label class="s2m-label" for="s2m-engine">Transcription engine</label>
+          <select id="s2m-engine" class="s2m-input">
+            <option value="auto">Auto (pYIN for bass/vocals)</option>
+            <option value="pyin">pYIN — monophonic</option>
+            <option value="basic-pitch">Basic Pitch — polyphonic (optional dep)</option>
+          </select>
+        </div>
+        <div>
+          <label class="s2m-label" for="s2m-format">Audio format</label>
+          <select id="s2m-format" class="s2m-input">
+            <option value="wav">WAV 24-bit</option>
+            <option value="flac">FLAC (smaller)</option>
+          </select>
+        </div>
+      </div>
+      <label class="s2m-check"><input type="checkbox" id="s2m-backing" checked> Also write a backing track without the bass</label>
+      <label class="s2m-check"><input type="checkbox" id="s2m-skip"> The file is already an isolated bass stem — only transcribe it</label>
+    </details>
+
+    <div class="s2m-row s2m-between s2m-actions">
+      <span class="s2m-small s2m-dim" id="s2m-form-msg"></span>
+      <button class="s2m-btn s2m-primary" id="s2m-go" type="button" disabled>Separate &amp; transcribe</button>
+    </div>
+  </section>
+
+  <!-- ── jobs ───────────────────────────────────────────────────────── -->
+  <section>
+    <h2 class="s2m-h2 s2m-jobs-title">Results</h2>
+    <div id="s2m-jobs"><p class="s2m-dim s2m-small">No jobs yet.</p></div>
+  </section>
+</div>

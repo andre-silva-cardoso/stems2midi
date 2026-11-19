@@ -1,0 +1,17 @@
+<!-- Stems → MIDI — settings panel. Engine setup (Python interpreter, installing
+     PyTorch/Demucs) lives on the plugin screen, next to its live status. -->
+<div style="display:flex;flex-direction:column;gap:10px;font-size:14px;line-height:1.45">
+  <p style="margin:0;color:#94a3b8">
+    Splits songs into stems with Demucs and transcribes the bass to MIDI.
+    The separation engine (PyTorch + Demucs, ~2&nbsp;GB) is installed and checked
+    on the plugin screen, where you can also point it at a separate Python/venv
+    (e.g. one with the CUDA build of PyTorch for NVIDIA GPUs).
+  </p>
+  <div>
+    <button type="button"
+            onclick="window.showScreen &amp;&amp; window.showScreen('plugin-stems2midi')"
+            style="appearance:none;border:1px solid #0ea5e9;background:#0ea5e9;color:#04131d;font-weight:600;border-radius:8px;padding:7px 14px;cursor:pointer">
+      Open Stems → MIDI
+    </button>
+  </div>
+</div>

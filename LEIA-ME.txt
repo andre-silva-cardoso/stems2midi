@@ -1,0 +1,198 @@
+﻿stems2midi — separar stems e gerar o MIDI do baixo
+====================================================
+
+INSTALAR (Windows 10/11)
+1. Extraia este .zip para uma pasta com espaço livre (~6 GB), por exemplo C:\stems2midi
+   (evite pastas sincronizadas como o OneDrive — o ambiente Python tem milhares de ficheiros).
+2. Dê duplo clique em INSTALAR.bat e responda às perguntas.
+   O instalador:
+     • deteta a placa NVIDIA e a versão de CUDA do driver;
+     • encontra o Python 3.10–3.13 (ou oferece-se para instalar o 3.12 via winget);
+     • cria o ambiente .venv nesta pasta e instala PyTorch com CUDA, Demucs e librosa
+       (download de ~2,5 GB, demora alguns minutos);
+     • confirma que a GPU é usada e faz um teste completo (descarrega o modelo, ~80 MB);
+     • opcionalmente cria um atalho no Ambiente de Trabalho e liga o plugin do FeedBack.
+   Tudo fica registado em install.log.
+
+ATUALIZAR (versão nova da ferramenta, já instalada antes)
+• Extraia o .zip novo para qualquer pasta e dê duplo clique em ATUALIZAR.bat.
+  Encontra a instalação anterior (a pasta com .venv), copia para lá a ferramenta nova,
+  instala só as dependências pequenas que faltem (ex.: pyphen), verifica e volta a copiar
+  o plugin para o FeedBack. Não volta a descarregar o PyTorch nem os modelos: demora segundos.
+• Sem copiar o .zip à mão: ponha o .zip no Google Drive, partilhe-o como "Qualquer pessoa com o
+  link" e, na pasta da instalação, corra uma vez (numa linha de comandos):
+      ATUALIZAR.bat -Url "https://drive.google.com/file/d/…/view?usp=sharing"
+  O link fica guardado. Nas próximas versões substitua o ficheiro no Drive mantendo o link
+  (botão direito → Gerir versões → Carregar nova versão) e dê só duplo clique em ATUALIZAR.bat.
+• O ATUALIZAR.bat mostra a versão instalada e a nova (ex.: 1.1.4 → 1.1.5).
+• O INSTALAR.bat também deteta uma instalação anterior e pergunta se quer só atualizar.
+• Instalação de raiz (ex.: problemas com a GPU): INSTALAR.bat -Force
+
+USAR
+• Arraste um ou mais MP3/WAV/FLAC para cima de stems2midi.bat (ou do atalho).
+  Resultado: pasta "<música>_stems" ao lado do ficheiro, com
+    bass.wav, guitar.wav, backing_no_bass.wav (música sem baixo), bass.mid,
+    bass.tab.txt (tablatura: corda e traste de cada nota) e
+    bass_RS2.xml (arranjo de baixo Rocksmith 2014: importe no EOF com
+    File → Import → Rocksmith, ou no DLC Builder).
+• Artista/título do XML: vêm do nome do ficheiro "Artista - Título.mp3". Para os
+  mudar (ou para refazer só o XML), arraste a pasta "<música>_stems" para cima de
+  stems2midi.bat, ou:  stems2midi.bat "<música>_stems" --artist "…" --title "…" --album "…" --year 1998
+• O EOF acrescenta silêncio no início do guitar.ogg que cria. Para o XML ficar
+  certo nesse áudio:  stems2midi.bat "<música>_stems" --align-to "<pasta EOF>\guitar.ogg"
+  (mede o desfasamento sozinho) ou  --shift 5.0  (em segundos).
+• Linha de comandos (mais opções):  stems2midi.bat musica.mp3 --stems all --quantize 16
+  Ajuda completa:                    stems2midi.bat --help
+• Opções por omissão para o modo "arrastar": defina a variável de ambiente
+  STEMS2MIDI_ARGS, por exemplo  --stems all --quantize 16 --model htdemucs_ft
+• Afinação do baixo para a tablatura (por omissão "auto": 4 cordas E A D G, ou
+  5 cordas B E A D G quando a música desce abaixo do Mi):
+    --tuning 4            (sempre 4 cordas)          --tuning 5   (5 cordas B E A D G)
+    --tuning drop-d
+    --tuning "C#1 F#1 B1 E2"                         --tuning=-1,-1,-1,-1
+
+PREFERÊNCIAS (stems2midi.ini)
+• O instalador cria %APPDATA%\stems2midi\stems2midi.ini com:
+    lead_silence = <segundos>   silêncio que o EOF põe no início do guitar.ogg (o XML é deslocado)
+    plugins_dir  = <pasta>      pasta de plugins do FeedBack (por omissão
+                                C:\Program Files\feedback\current\resources\slopsmith\plugins)
+  Qualquer opção da linha de comandos pode ter aqui um valor por omissão (ex.: tuning = 5).
+• Se a pasta de plugins estiver em "Program Files", o instalador pede autorização de
+  administrador para copiar o plugin. Depois de atualizar o FeedBack, corra de novo o INSTALAR.bat.
+
+PARTES DA MÚSICA LOGO NA TRANSCRIÇÃO
+    stems2midi.bat "Banda - Música.mp3" --parts "intro=0:00-0:21, verse=0:21-0:42, chorus=0:42-1:05" --slap verse,chorus
+  (dá a primeira ocorrência de cada parte; as repetições são encontradas pelas notas;
+   --slap com nomes marca slap/pop em todas as ocorrências dessas partes)
+  --parts auto  encontra as partes no áudio e numera-as (mesma letra = mesma música):
+      intro 1 (A) 0:01 · verse 1 (B) 0:37 · chorus 1 (C) 1:06 · verse 2 (B) 1:37 …
+  Os nomes são uma sugestão: a lista completa é escrita para corrigir os nomes e
+  voltar a correr com --parts "…" (também numa pasta <música>_stems).
+
+QUANDO O STEM DO BAIXO TEM MAIS DO QUE O BAIXO (orquestra, piano, sintetizador)
+• O Demucs põe no stem do baixo todos os instrumentos graves. Ex.: em "Who Wants to Live
+  Forever" o baixo só entra aos 2:50; antes disso as "notas" são da orquestra.
+    --only "2:50-5:20"   só nesses tempos (da música) ou compassos (números do EOF: "40-90");
+                         também numa pasta _stems (a transcrição completa fica em bass.notes.full.json)
+    --sustained          baladas / notas longas: uma nota repetida só conta se for tocada de novo
+                         (sobe o volume); junta notas partidas em várias
+  No FeedBack: "Bass plays only in" e "long held notes (ballad)".
+• Músicas lentas podem sair com o dobro do andamento (143 em vez de ~72): use --bpm 72.
+
+NOTAS DE OUTRO TRANSCRITOR (AnthemScore, Guitar Pro, MuseScore)
+• Quando o baixo quase não tem fundamental (o Mi grave soa sobretudo como o harmónico Si),
+  a deteção da ferramenta perde notas ou escreve o harmónico. O AnthemScore lida melhor com isso.
+  Use as notas dele e a ferramenta faz o resto (tablatura, slap, partes, frases, XML):
+    stems2midi.bat "Delfins - Bandeira.mp3" --notes-from "Bandeira.musicxml"
+    stems2midi.bat "Delfins - Bandeira_stems" --notes-from "Bandeira.musicxml"   (num resultado anterior)
+  No FeedBack: campo "Bass notes from another transcriber".
+• As notas são acertadas com o stem do baixo: andamento (o AnthemScore usa um tempo fixo),
+  desfasamento e pequenas derivas ao longo da música. O aviso no fim diz quantas notas
+  caíram num ataque e a diferença de andamento. Aceita MusicXML (.musicxml/.xml/.mxl) e MIDI (.mid).
+• Só parte da música a partir do ficheiro (--use):
+    --use all          tudo do ficheiro (por omissão)
+    --use doubtful     transcrição da ferramenta, e os compassos duvidosos da revisão vêm do ficheiro
+    --use "12-30, 45"  esses compassos (números do EOF) do ficheiro;  ou tempos: --use "1:02-1:30"
+  No fim diz que compassos vieram do ficheiro. No FeedBack: escolha ao lado do ficheiro.
+
+REVISÃO (compassos a verificar)
+• Depois da transcrição, cada compasso é comparado com o stem do baixo e é escrito
+  "bass.review.txt" na pasta do resultado: os compassos mais prováveis de ter erros
+  primeiro (numerados como no EOF; entre [ ] o tempo no EOF, com o silêncio inicial).
+  bad = provavelmente errado, check = vale a pena ouvir. Motivos possíveis: ataques
+  sem nota (pops/ghost notes), notas sem ataque, nota/oitava que não bate com o som,
+  baixo a soar sem nota, baixo muito baixo (fade).
+• No FeedBack: faixas vermelhas/amarelas no piano roll e a lista "Bars to review"
+  por baixo (clique num compasso para o ouvir).
+• Para não fazer: --no-review
+
+LETRA (UltraStar Creator / EOF / Rocksmith)
+• Cole a letra no campo "Lyrics" antes de começar (ou depois, por baixo do resultado), ou:
+    stems2midi.bat "<música>.mp3" --lyrics letra.txt
+    stems2midi.bat "<música>_stems" --lyrics letra.txt      (só a letra, num resultado anterior)
+  Uma linha cantada por linha, com TODAS as repetições escritas (sem "[Refrão] x2").
+  As sílabas são separadas automaticamente; para escolher, escreva-as: can-ção, un-faith-ful
+  Também aceita um ficheiro UltraStar (.txt) como letra: mantém as sílabas e as linhas e só refaz os tempos.
+• Resultado na pasta:
+    vocals.ultrastar.txt  → abrir no UltraStar Creator para afinar, ou importar no EOF
+                            (faixa PART VOCALS > File > Import > Lyrics)
+    vocals_RS2.xml        → letra para o Rocksmith (DLC Builder), como o PART VOCALS_RS2.xml do EOF
+  Com lead_silence (ex.: 5) os tempos seguem o guitar.ogg do EOF e o ficheiro diz #MP3:guitar.ogg.
+• Os dois ficheiros saem sem acentos (ã → a, ç → c, é → e), porque o Rocksmith, o EOF e
+  algumas ferramentas UltraStar não os aceitam. O mesmo para o título / artista / álbum do
+  bass_RS2.xml (e do XML do chart_tools.bat structure). Para os manter: --keep-accents
+  (ou "keep_accents = yes" no stems2midi.ini).
+• Alinhamento: modelo MMS (~1,2 GB, descarregado na 1.ª vez; segundos na GPU) ou, sem ele,
+  um método simples (início das linhas quase sempre certo, palavras dentro da linha aproximadas).
+• Comparar com uma letra feita à mão:
+    lyrics.bat "<música>_stems" --lyrics letra.txt --compare "PART VOCALS_RS2.xml"
+
+COM O EOF (Editor on Fire)
+1. Corra a música (com afinação; indique "Slap sections" se tiver slap) → bass_RS2.xml
+   e bass.review.txt (compassos a rever primeiro).
+2. Se o guitar.ogg do projeto EOF tem silêncio no início, acerte o XML:
+   stems2midi.bat "<música>_stems" --align-to "<pasta EOF>\guitar.ogg"   (ou --shift <segundos>)
+3. No EOF, selecione PRIMEIRO a faixa PART REAL_BASS e depois File > Import > Rocksmith.
+   (O import substitui a faixa ativa; noutra faixa não faz nada e não avisa.)
+4. As notas ficam na dificuldade 0 (primeiro separador de dificuldade), não na Expert.
+   Pode deixá-las aí: o export funciona igual e o DLC Builder gera os outros níveis.
+5. Não é preciso acertar compasso a compasso: as notas estão em segundos; o mapa de
+   batidas só define as linhas de compasso, o início das frases e a grelha do EOF.
+   Corrija só se o andamento saiu errado (corra de novo com --bpm) ou o compasso 1
+   estiver na batida errada. Ao mover batidas, confirme que o EOF não arrastou as notas.
+6. Slap/pop à mão no EOF:
+   • slap em bloco: selecione as notas (arrastar ou Ctrl+A) > Note > Rocksmith > Toggle > Slap (Ctrl+Shift+S)
+   • pops: Edit > Selection > Conditional deselect (Alt+D) para ficar só com as cordas D/G
+     ("lanes" = cordas) > Note > Rocksmith > Remove > Slap e depois Toggle > Pop (Ctrl+Shift+P)
+   • secções: Beat > Rocksmith > Place RS Section (Shift+S), com "Also add as RS phrase"
+7. Letra: importe vocals.ultrastar.txt na faixa PART VOCALS (File > Import > Lyrics)
+   ou dê o vocals_RS2.xml diretamente ao DLC Builder.
+8. Exporte do EOF e faça o psarc no DLC Builder como habitualmente.
+
+FRASES (Riff Repeater)
+• No XML, dentro de cada secção (verse, chorus… ou "riff" de 8 em 8 compassos) há uma frase
+  a cada 4 compassos — a frase é o que o Riff Repeater do Rocksmith repete. Trechos com as
+  mesmas notas ficam com o mesmo nome de frase.
+• Outro tamanho: --phrase-bars 2 (ou 8; 0 = uma frase por secção), "phrase_bars = 2" no
+  stems2midi.ini, ou "phrases" no formulário Rocksmith XML do FeedBack.
+  O chart_tools.bat structure também aceita --phrase-bars.
+
+BAIXO DE 5 CORDAS
+• O Rocksmith 2014 só tem baixo de 4 cordas (no DLC Builder: "Invalid strings used"). Com
+  afinação de 5 cordas (B E A D G), o bass_RS2.xml sai com 4 cordas B E A D escritas como nos
+  CDLC de 5 cordas (ex.: Miley Cyrus): desvios +7 +7 +7 +7 e centOffset -1200 (uma oitava
+  abaixo); as notas tocadas na corda G passam para a corda D, 5 trastes acima.
+  A tablatura (bass.tab.txt) continua com 5 cordas.
+• Um XML feito antes (com 5 cordas):  chart_tools.bat fourstring "bass_RS2.xml"
+• Quando há muitas notas na corda G (≥ 10 e ≥ 5 %), também sai bass5_rhythm_RS2.xml: um
+  arranjo Rhythm (de guitarra, bónus) uma oitava abaixo (A220, centOffset -1200) afinado
+  B E A D G (a 6.ª corda, não usada, também em G: -5 -5 -5 -5 -4 -9), tom "bass", como nos
+  CDLC de 5 cordas: o baixo de 5 cordas toca-o corda a corda.
+  Junte-o ao baixo no DLC Builder.  --rs-5string rhythm (sempre) / bass (nunca).
+  Num XML feito antes:  chart_tools.bat rhythm5 "bass_RS2.xml"
+
+SECÇÕES E SLAP/POP EM BLOCO (chart_tools.bat)
+• Dê o nome à primeira ocorrência de cada parte; as repetições são encontradas pelas notas:
+    chart_tools.bat structure "PART REAL_BASS_RS2.xml" --define "verse=0:21-0:42, chorus=0:42-1:05" --copy-tech
+  --copy-tech copia o slap/pop da primeira ocorrência para as repetições;
+  --slap verse,chorus marca slap (E/A) e pop (D/G) em todas as ocorrências dessas partes.
+  Resultado: "<nome>.structure.xml" para importar no EOF (File > Import > Rocksmith, com PART REAL_BASS ativo).
+
+NO FEEDBACK
+• Se respondeu "sim" à variável STEMS2MIDI_PYTHON e indicou a pasta do FeedBack,
+  basta reiniciar o FeedBack e abrir "Stems → MIDI" na barra lateral.
+• Caso contrário: copie a pasta "stems2midi" para <FeedBack>\plugins\, reinicie o
+  FeedBack, abra "Stems → MIDI" → "Python…" e indique  <esta pasta>\.venv\Scripts\python.exe
+• Não use o botão "Install dependencies" do plugin neste PC (instalaria a versão CPU).
+
+PROBLEMAS
+• "GPU não está a ser usada": INSTALAR.bat -Force   (ou forçar a build: INSTALAR.bat -Force -Cuda cu126)
+• Driver antigo: atualize em https://www.nvidia.com/Download e corra INSTALAR.bat de novo.
+• Ficheiros M4A/AAC/WMA: instale o ffmpeg (winget install ffmpeg).
+• Placa com pouca memória (≤4 GB): a ferramenta passa sozinha para CPU se faltar memória;
+  ou use  --model htdemucs  (mais leve).
+• Reinstalar do zero: INSTALAR.bat -Force
+• Desinstalar: apague esta pasta (e o atalho). A variável STEMS2MIDI_PYTHON pode ser removida em
+  Definições → Sistema → Acerca de → Definições avançadas → Variáveis de ambiente.
+
+Mais detalhes: stems2midi\README.md

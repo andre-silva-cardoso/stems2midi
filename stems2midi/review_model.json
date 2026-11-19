@@ -1,0 +1,62 @@
+{
+ "about": "Logistic model: chance a bar has transcription mistakes (\u2265 1/3 notes wrong vs hand-made charts); 15 songs, bench 2026-11-13.",
+ "features": [
+  "missed_per_note",
+  "missed",
+  "weak_frac",
+  "support",
+  "low_octave_frac",
+  "high_octave_frac",
+  "level_db",
+  "uncovered",
+  "density",
+  "pitch_spread",
+  "class_mismatch",
+  "octave_up_rise"
+ ],
+ "mean": [
+  0.854248,
+  3.395167,
+  0.013157,
+  25.159775,
+  0.000901,
+  0.222004,
+  0.830872,
+  0.060576,
+  2.90933,
+  5.235794,
+  0.176242,
+  10.283426
+ ],
+ "scale": [
+  2.622396,
+  6.68005,
+  0.073586,
+  8.892192,
+  0.012483,
+  0.347267,
+  10.615585,
+  0.084015,
+  1.452151,
+  5.782351,
+  0.21755,
+  6.646118
+ ],
+ "coef": [
+  0.280731,
+  0.432235,
+  0.110702,
+  -0.556875,
+  0.444696,
+  -0.685698,
+  -0.036967,
+  0.194586,
+  -0.558771,
+  0.628364,
+  0.302067,
+  -0.659499
+ ],
+ "intercept": 0.320361,
+ "check": 0.517,
+ "bad": 0.845
+}
