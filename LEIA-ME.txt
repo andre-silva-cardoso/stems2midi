@@ -24,6 +24,9 @@ ATUALIZAR (versão nova da ferramenta, já instalada antes)
       ATUALIZAR.bat -Url "https://drive.google.com/file/d/…/view?usp=sharing"
   O link fica guardado. Nas próximas versões substitua o ficheiro no Drive mantendo o link
   (botão direito → Gerir versões → Carregar nova versão) e dê só duplo clique em ATUALIZAR.bat.
+• A partir do GitHub (a versão mais recente do repositório), uma vez, na pasta da instalação:
+      ATUALIZAR.bat -Url "https://github.com/andre-silva-cardoso/stems2midi"
+  O link fica guardado: nas próximas vezes basta duplo clique em ATUALIZAR.bat.
 • O ATUALIZAR.bat mostra a versão instalada e a nova (ex.: 1.1.4 → 1.1.5).
 • O INSTALAR.bat também deteta uma instalação anterior e pergunta se quer só atualizar.
 • Instalação de raiz (ex.: problemas com a GPU): INSTALAR.bat -Force
@@ -79,7 +82,18 @@ QUANDO O STEM DO BAIXO TEM MAIS DO QUE O BAIXO (orquestra, piano, sintetizador)
   No FeedBack: "Bass plays only in" e "long held notes (ballad)".
 • Músicas lentas podem sair com o dobro do andamento (143 em vez de ~72): use --bpm 72.
 
-NOTAS DE OUTRO TRANSCRITOR (AnthemScore, Guitar Pro, MuseScore)
+SEGUNDA PASSAGEM (opções sugeridas)
+• No fim de cada transcrição, a ferramenta diz que opções vale a pena experimentar e porquê
+  (nos avisos e no fim do bass.review.txt), com o comando para correr de novo sobre a pasta
+  do resultado (usa o bass.wav da pasta: não separa outra vez; mantém batidas, slap, partes):
+    --sustained   muitas notas iguais seguidas sem novo ataque (nota longa partida)
+    --only "..."  muitas notas em trechos onde o stem está 12+ dB mais baixo (outros instrumentos)
+    --bpm N       andamento provavelmente a dobrar (baladas) ou a metade (16 avos a ~80 BPM)
+    --notes-from  a revisão acha a maioria dos compassos duvidosos (ex.: pouca fundamental)
+  São palpites: ouça antes de aplicar. Para não aparecerem: --no-suggest
+    stems2midi.bat "Queen - Who Wants to Live Forever_stems" --sustained --only "2:50-5:20" --bpm 71.8
+
+NOTAS DE OUTRO TRANSCRITOR (Guitar Pro, AnthemScore, MuseScore)
 • Quando o baixo quase não tem fundamental (o Mi grave soa sobretudo como o harmónico Si),
   a deteção da ferramenta perde notas ou escreve o harmónico. O AnthemScore lida melhor com isso.
   Use as notas dele e a ferramenta faz o resto (tablatura, slap, partes, frases, XML):
@@ -88,7 +102,24 @@ NOTAS DE OUTRO TRANSCRITOR (AnthemScore, Guitar Pro, MuseScore)
   No FeedBack: campo "Bass notes from another transcriber".
 • As notas são acertadas com o stem do baixo: andamento (o AnthemScore usa um tempo fixo),
   desfasamento e pequenas derivas ao longo da música. O aviso no fim diz quantas notas
-  caíram num ataque e a diferença de andamento. Aceita MusicXML (.musicxml/.xml/.mxl) e MIDI (.mid).
+  caíram num ataque e a diferença de andamento. Aceita MusicXML (.musicxml/.xml/.mxl), MIDI (.mid)
+  e Guitar Pro (.gp3/.gp4/.gp5/.gpx/.gp).
+• Tablatura Guitar Pro (ex.: "Circo de feras.gp5"):
+    stems2midi.bat "Xutos & Pontapés - Circo de feras.mp3" --notes-from "Circo de feras.gp5"
+  - usa a pista do baixo (--track 2 ou --track "Baixo 2" para outra; no FeedBack: caixa por
+    baixo do ficheiro);
+  - toca como na música: repetições, voltas, D.S./D.C. e mudanças de andamento;
+  - tablaturas escritas noutro andamento (dobro, metade, ou qualquer outro) são acertadas
+    sozinhas; se o andamento da banda muda e o da tablatura não, as notas são acertadas
+    uma a uma com uma transcrição rápida do baixo;
+  - mantém a afinação (5 cordas, drop D…), a corda e o traste de cada nota, slap/pop e
+    hammer-on/pull-off/slide da tablatura; as notas mortas (x) ajudam a acertar e depois saem;
+  - se o aviso indicar trechos onde as notas não batem com o baixo, a tablatura difere aí
+    da gravação (parte em falta, repetida, ou tocada de outra forma): veja no EOF.
+  - ficheiros .gpx/.gp (Guitar Pro 6–8) com repetições: guarde como .gp5 (as repetições
+    destes só são lidas uma vez).
+  Nas 5 músicas com tablatura e chart feito à mão: 92–99,8 % das notas certas, cordas e
+  trastes iguais ao chart.
 • Só parte da música a partir do ficheiro (--use):
     --use all          tudo do ficheiro (por omissão)
     --use doubtful     transcrição da ferramenta, e os compassos duvidosos da revisão vêm do ficheiro
@@ -148,6 +179,14 @@ COM O EOF (Editor on Fire)
 7. Letra: importe vocals.ultrastar.txt na faixa PART VOCALS (File > Import > Lyrics)
    ou dê o vocals_RS2.xml diretamente ao DLC Builder.
 8. Exporte do EOF e faça o psarc no DLC Builder como habitualmente.
+9. Antes do DLC Builder (opcional):  chart_tools.bat dlcfix "PART REAL_BASS_RS2.xml" --from-folder
+   • tira as mudanças de posição da mão de cima dos hammer-ons/pull-offs (aviso "position
+     shift into pull-off" do DLC Builder) e passa-as para a nota tocada antes;
+   • escreve artista/título sem acentos, tirados do nome da pasta ("Artista - Título").
+     O nome do .psarc vem do artista/título: se o projeto EOF tem acentos nas propriedades
+     (Song > Properties), o EOF escreve-os estragados ("Pontapés" → "PontapAs") e o psarc
+     fica com esse nome. Também se corrige no EOF ou nos campos do DLC Builder.
+   Resultado: "<nome>.dlc.xml" (é esse que se dá ao DLC Builder).
 
 FRASES (Riff Repeater)
 • No XML, dentro de cada secção (verse, chorus… ou "riff" de 8 em 8 compassos) há uma frase

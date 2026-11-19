@@ -1,0 +1,6 @@
+# Windows scripts need CRLF (also in GitHub's .zip downloads)
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.txt text
+*.py  text eol=lf
+*.th  binary

@@ -428,6 +428,10 @@ def export_xml(payload: dict, *, title: str = "", artist: str = "", album: str =
                for a in payload.get("anchors") or []]
     if not anchors:
         anchors = [gp2rs.RsAnchor(time=rs_notes[0].time, fret=1)]
+    anchors, n_fix = _chart_tools().fix_legato_anchors(rs_notes, anchors, gp2rs.RsAnchor)
+    if n_fix:
+        warnings.append(f"{n_fix} hand-position change(s) moved off hammer-ons/pull-offs "
+                        "(DLC Builder: \"position shift into pull-off\").")
     beats = [gp2rs.RsBeat(time=t, measure=m) for t, m in beat_map]
     counts: dict[str, int] = {}
     sections = []

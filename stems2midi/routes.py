@@ -55,7 +55,7 @@ MAX_JOBS_KEPT = 30
 MAX_LYRICS = 30000
 LANGUAGES = {"pt", "en", "es", "fr", "de", "it"}
 LYRICS_FILE = "lyrics.input.txt"
-NOTES_EXTS = {".musicxml", ".xml", ".mxl", ".mid", ".midi"}
+NOTES_EXTS = {".musicxml", ".xml", ".mxl", ".mid", ".midi", ".gp3", ".gp4", ".gp5", ".gpx", ".gp"}
 MAX_NOTES_FILE = 20 * 1024 * 1024
 _JOB_ID_RE = re.compile(r"^[a-f0-9]{12}$")
 _FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
@@ -106,6 +106,7 @@ def parse_options(form: dict) -> dict:
                  for k in ("artist", "title", "album", "year") if clean_text(form.get(k))},
         "lyrics": clean_lyrics(form.get("lyrics")),
         "notes_use": _notes_use(form.get("notes_use")),
+        "notes_track": clean_text(form.get("notes_track"), 60),
         "only": _only(form.get("only")),
         "sustained": str(form.get("sustained", "")).lower() in ("1", "true", "on", "yes"),
         "language": _language(form.get("language")),
@@ -254,6 +255,8 @@ def build_command(python: str, input_path: Path, out_dir: Path, opts: dict) -> l
         cmd.append(f"--notes-from={opts['notes_from']}")
         if opts.get("notes_use") and opts["notes_use"] != "all":
             cmd.append(f"--use={opts['notes_use']}")
+        if opts.get("notes_track"):
+            cmd.append(f"--track={opts['notes_track']}")
     if opts.get("lyrics_file"):
         cmd.append(f"--lyrics={opts['lyrics_file']}")
         if opts.get("language"):
@@ -699,7 +702,8 @@ def setup(app, context):
             n_ext = Path(nf.filename).suffix.lower()
             if n_ext not in NOTES_EXTS:
                 shutil.rmtree(jdir, ignore_errors=True)
-                return JSONResponse({"error": "Notes file: use MusicXML (.musicxml/.xml/.mxl) or MIDI (.mid)"}, 400)
+                return JSONResponse({"error": "Notes file: use MusicXML (.musicxml/.xml/.mxl), MIDI (.mid) "
+                                              "or Guitar Pro (.gp3/.gp4/.gp5/.gpx/.gp)"}, 400)
             npath = jdir / ("notes_from" + n_ext)
             data = await nf.read(MAX_NOTES_FILE + 1)
             if len(data) > MAX_NOTES_FILE:

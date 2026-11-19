@@ -236,6 +236,7 @@ async function submit() {
         fd.append('notes_file', nf, nf.name);
         const use = $('#s2m-notes-use').value;
         fd.append('notes_use', use === 'bars' ? ($('#s2m-notes-bars').value.trim() || 'all') : use);
+        fd.append('notes_track', $('#s2m-notes-track').value.trim());
     }
     fd.append('lyrics', $('#s2m-lyrics').value);
     fd.append('language', $('#s2m-language').value);

@@ -36,6 +36,12 @@ fourstring  5-string bass XML → Rocksmith 4-string (B standard as +7 ×4 / −
 
            python chart_tools.py fourstring bass_RS2.xml
 
+dlcfix      an XML saved by EOF, ready for DLC Builder: hand-position
+            changes moved off hammer-ons/pull-offs ("position shift into
+            pull-off") and title/artist without accents (they name the .psarc):
+
+           python chart_tools.py dlcfix "PART REAL_BASS_RS2.xml" --from-folder
+
 rhythm5     the same part as a Rhythm arrangement an octave down (A220) a 5-string
             bass plays string for string (B E A D G):
 
@@ -379,6 +385,137 @@ def plain_metadata(root: ET.Element) -> int:
     return n
 
 
+ANCHOR_MAX_WIDTH = 6           # widest fret-hand window we write (frets)
+_T_EPS = 0.0015
+
+
+def fix_legato_anchors(rs_notes, anchors, make_anchor):
+    """No hand-position change on a hammer-on / pull-off (DLC Builder flags it
+    as "position shift into pull-off", and the hand can't shift while the
+    string is still ringing from the note before).
+
+    For each run of legato notes (first picked note + its hammer-ons /
+    pull-offs) that has an anchor change inside it, one anchor at the picked
+    note covers the whole run; the hand position in force after the run is
+    put back at the next note. A run too wide for one hand position loses the
+    hammer-on/pull-off where the hand has to move. Returns (anchors, fixes)."""
+    def legato(n):
+        return bool(getattr(n, "hammer_on", False) or getattr(n, "pull_off", False))
+
+    anchors = sorted(anchors, key=lambda a: a.time)
+
+    def active(t):
+        cur = None
+        for a in anchors:
+            if a.time <= t + _T_EPS:
+                cur = a
+            else:
+                break
+        return cur
+
+    fixes, i = 0, 0
+    while i < len(rs_notes):
+        j = i
+        while j + 1 < len(rs_notes) and legato(rs_notes[j + 1]):
+            j += 1
+        if j > i:
+            run = rs_notes[i:j + 1]
+            t0, t1 = run[0].time, run[-1].time
+            inside = [a for a in anchors if t0 + _T_EPS < a.time <= t1 + _T_EPS]
+            if inside:
+                frets = [n.fret for n in run if n.fret > 0]
+                lo, hi = (min(frets), max(frets)) if frets else (1, 1)
+                after = active(t1)
+                if hi - lo + 1 <= ANCHOR_MAX_WIDTH:
+                    anchors = [a for a in anchors if a not in inside and abs(a.time - t0) > _T_EPS]
+                    anchors.append(make_anchor(time=t0, fret=max(1, lo), width=max(4, hi - lo + 1)))
+                    nxt = rs_notes[j + 1] if j + 1 < len(rs_notes) else None
+                    if nxt is not None and after is not None and \
+                            not any(t1 + _T_EPS < a.time <= nxt.time + _T_EPS for a in anchors):
+                        # the notes after the run, until the next hand position
+                        until = min((a.time for a in anchors if a.time > nxt.time + _T_EPS), default=1e9)
+                        later = [n.fret for n in rs_notes[j + 1:] if n.time < until - _T_EPS and n.fret > 0]
+                        w = max(4, hi - lo + 1)
+                        if any(not max(1, lo) <= f < max(1, lo) + w for f in later):
+                            anchors.append(make_anchor(time=nxt.time, fret=after.fret, width=after.width))
+                    anchors.sort(key=lambda a: a.time)
+                else:               # can't be one hand position: pick where the hand moves
+                    for k in range(i + 1, j + 1):
+                        n, p = rs_notes[k], rs_notes[k - 1]
+                        if any(p.time + _T_EPS < a.time <= n.time + _T_EPS for a in anchors):
+                            n.hammer_on = n.pull_off = False
+                fixes += 1
+        i = j + 1
+    return anchors, fixes
+
+
+class _Note:
+    """A note (or chord) of an arrangement level, for fix_legato_anchors."""
+    def __init__(self, el, chord=False):
+        self.el, self.chord = el, chord
+        self.time = float(el.get("time"))
+        if chord:
+            frets = [int(cn.get("fret", 0)) for cn in el.findall("chordNote")]
+            self.fret = min([f for f in frets if f > 0], default=0)
+            self.hammer_on = self.pull_off = False
+        else:
+            self.fret = int(el.get("fret", 0))
+            self.hammer_on = el.get("hammerOn") == "1"
+            self.pull_off = el.get("pullOff") == "1"
+
+
+class _Anchor:
+    def __init__(self, time, fret, width=4):
+        self.time, self.fret, self.width = float(time), int(fret), int(width)
+
+
+def dlc_anchors(root: ET.Element) -> int:
+    """fix_legato_anchors on every difficulty level of an arrangement XML
+    (e.g. saved by EOF). Returns how many runs were changed."""
+    total = 0
+    for level in root.iter("level"):
+        notes_el, anchors_el = level.find("notes"), level.find("anchors")
+        if notes_el is None or anchors_el is None or not len(anchors_el):
+            continue
+        notes = [_Note(e) for e in notes_el.findall("note")]
+        chords_el = level.find("chords")
+        if chords_el is not None:
+            notes += [_Note(e, chord=True) for e in chords_el.findall("chord")]
+        notes.sort(key=lambda n: n.time)
+        old = [_Anchor(a.get("time"), a.get("fret"), float(a.get("width", 4))) for a in anchors_el.findall("anchor")]
+        fixed, n = fix_legato_anchors(notes, old, _Anchor)
+        if not n:
+            continue
+        total += n
+        for nt in notes:
+            if not nt.chord:
+                for k, v in (("hammerOn", nt.hammer_on), ("pullOff", nt.pull_off)):
+                    if nt.el.get(k) == "1" and not v:
+                        nt.el.set(k, "0")
+        for a in list(anchors_el):
+            anchors_el.remove(a)
+        for a in fixed:
+            ET.SubElement(anchors_el, "anchor", time=f"{a.time:.3f}", fret=str(a.fret), width=f"{a.width:.3f}")
+        anchors_el.set("count", str(len(fixed)))
+    return total
+
+
+def set_metadata(root: ET.Element, artist: str = "", title: str = "", album: str = "") -> None:
+    """Artist / title / album and their sort fields (DLC Builder names the
+    package from these)."""
+    def put(tag, text):
+        el = root.find(tag)
+        if el is None:
+            el = ET.SubElement(root, tag)
+        el.text = text
+    for tags, val in ((("artistName", "artistNameSort"), artist), (("title", "songNameSort", "titleSort"), title),
+                      (("albumName", "albumNameSort"), album)):
+        if val:
+            for t in tags:
+                if t == tags[0] or root.find(t) is not None:
+                    put(t, val)
+
+
 # ── 5-string → 4-string (Rocksmith has only 4-string bass) ─────────────────
 
 FIVE_STRING_BASE = (23, 28, 33, 38, 43)      # B0 E1 A1 D2 G2 — a 5-string tab's offsets are vs these
@@ -706,6 +843,37 @@ def cmd_fourstring(args) -> int:
     return 0
 
 
+def folder_meta(path: Path) -> dict:
+    """"Artist - Title" from the folder holding the XML (EOF's Work folder)."""
+    name = Path(path).resolve().parent.name
+    if " - " in name:
+        a, t = name.split(" - ", 1)
+        return {"artist": a.strip(), "title": t.strip()}
+    return {}
+
+
+def cmd_dlcfix(args) -> int:
+    src = Path(args.xml)
+    tree = _load(src)
+    root = tree.getroot()
+    meta = folder_meta(src) if args.from_folder else {}
+    meta.update({k: v for k, v in (("artist", args.artist), ("title", args.title), ("album", args.album)) if v})
+    if not args.keep_accents:
+        meta = {k: to_ascii(v) for k, v in meta.items()}
+    set_metadata(root, **meta)
+    changed = 0 if args.keep_accents else plain_metadata(root)
+    n = dlc_anchors(root)
+    out = Path(args.output) if args.output else src.with_name(src.stem + ".dlc.xml")
+    ET.indent(tree, space="  ")
+    tree.write(str(out), encoding="UTF-8", xml_declaration=True)
+    print(out)
+    print(f"  artist: {(root.findtext('artistName') or '').strip()!r}, title: {(root.findtext('title') or '').strip()!r}"
+          + (f" ({changed} field(s) without accents)" if changed else ""))
+    print(f"  {n} hand-position change(s) moved off hammer-ons/pull-offs" if n
+          else "  no hand-position change on a hammer-on/pull-off")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         description="Edit a Rocksmith arrangement XML.",
@@ -755,6 +923,20 @@ def main(argv=None) -> int:
     r5.add_argument("--keep-accents", action="store_true", help="keep accented letters in title/artist/album")
     r5.add_argument("-o", "--output", help="output file (default: <name>.rhythm.xml next to the input)")
     r5.set_defaults(func=cmd_rhythm5)
+    dx = sub.add_parser("dlcfix", help="get an XML saved by EOF ready for DLC Builder (anchors on pull-offs, names)",
+                        description="DLC Builder: 'position shift into pull-off' — moves each hand-position change "
+                                    "off hammer-ons/pull-offs to the picked note before them. Also writes "
+                                    "title/artist/album (and their sort fields, which name the .psarc) without "
+                                    "accents: EOF turns 'Pontapés' into 'PontapAs'.")
+    dx.add_argument("xml", help="arrangement XML (e.g. PART REAL_BASS_RS2.xml saved by EOF)")
+    dx.add_argument("--from-folder", action="store_true",
+                    help="artist and title from the folder name ('Artist - Title'), e.g. EOF's Work folder")
+    dx.add_argument("--artist", help="artist name")
+    dx.add_argument("--title", help="song title")
+    dx.add_argument("--album", help="album name")
+    dx.add_argument("--keep-accents", action="store_true", help="keep accented letters")
+    dx.add_argument("-o", "--output", help="output file (default: <name>.dlc.xml next to the input)")
+    dx.set_defaults(func=cmd_dlcfix)
     args = p.parse_args(_cli_argv(argv))
     return args.func(args)
 

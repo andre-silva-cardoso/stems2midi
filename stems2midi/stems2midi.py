@@ -47,7 +47,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.2.1"
+__version__ = "1.2.5"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -102,6 +102,7 @@ class Note:
     velocity: int = 90
     legato: bool = False      # started without its own attack (hammer-on/pull-off/slide)
     tech: str | None = None   # "slap" | "pop" (see apply_slap)
+    string: int | None = None # string to play it on (0 = lowest), e.g. from a Guitar Pro tab
 
     @property
     def duration(self) -> float:
@@ -119,6 +120,7 @@ class Options:
     engine: str = "auto"                    # auto | pyin | basic-pitch
     quantize: int = 0                       # 0 = off, else grid per whole note (8, 16, 32)
     bpm: float | None = None                # override tempo
+    beats: list | None = None               # beat times from an earlier run (re-transcribing a result folder)
     fmin: str | None = None                 # override pitch range low (note name)
     fmax: str | None = None                 # override pitch range high
     min_note_ms: float = 60.0
@@ -136,6 +138,7 @@ class Options:
     review: bool = True                     # check the bass transcription against its stem, bar by bar
     notes_from: str | None = None           # MusicXML/MIDI of another transcriber (AnthemScore…) for the bass
     notes_use: str = "all"                  # where: all | doubtful (bars the review flags) | "12-30, 1:02-1:30"
+    notes_track: str | None = None          # Guitar Pro: track number (from 1) or name (default: the bass track)
     only: str | None = None                 # the bass guitar plays only here: "2:50-5:15" / "40-90" (bars)
     sustained: bool = False                 # ballad: long notes, re-plucks only with a clear level rise
     phrase_bars: int = 4                    # Rocksmith phrases (Riff Repeater units) every N bars; 0 = per section
@@ -145,6 +148,7 @@ class Options:
     keep_accents: bool = False              # lyrics files: keep ã, ç… (default: plain letters)
     five_string: str = "auto"               # 5-string tab in Rocksmith: auto | bass (4-string B) | rhythm (also a Rhythm XML)
     max_fret: int = 24
+    suggest: bool = True                    # look for options worth a re-run (suggest.py)
 
 
 @dataclass
@@ -163,19 +167,21 @@ class Result:
     model: str | None = None
     elapsed: float = 0.0
     warnings: list = field(default_factory=list)
+    suggestions: list = field(default_factory=list)  # [{"option", "value", "why"}] worth a re-run
+    rerun: str = ""                                   # the re-run command with them
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Environment probe
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _try_version(mod: str):
+def _try_version(mod: str, dist: str | None = None):
     try:
         m = __import__(mod)
         v = getattr(m, "__version__", None)
         if v is None:
             from importlib.metadata import version
-            v = version(mod)
+            v = version(dist or mod)
         return str(v)
     except Exception:
         return None
@@ -196,6 +202,7 @@ def check_environment() -> dict:
         "mido": _try_version("mido"),
         "torchaudio": _try_version("torchaudio"),
         "pyphen": _try_version("pyphen"),
+        "guitarpro": _try_version("guitarpro", "PyGuitarPro"),
         "basic_pitch": None,
         "ffmpeg": shutil.which("ffmpeg"),
         "cuda": False,
@@ -671,15 +678,44 @@ def stem_onsets(y: np.ndarray, sr: int, gate_db: float = -45.0) -> np.ndarray:
     return np.asarray(on, float) * hop / sr
 
 
-def notes_from_file(path: str | Path, y: np.ndarray, sr: int) -> tuple[list[Note], dict]:
-    """Notes of another transcriber's MusicXML/MIDI, lined up with the stem
-    ``y`` (see notesimport.py)."""
+def notes_from_file(path: str | Path, y: np.ndarray, sr: int,
+                    track: str | None = None) -> tuple[list[Note], dict]:
+    """Notes of another transcriber's MusicXML / MIDI / Guitar Pro file, lined
+    up with the stem ``y`` (see notesimport.py). A Guitar Pro tab also gives
+    each note's string and slap/pop/hammer-on/pull-off/slide, and ``info``
+    its track and tuning ("gp")."""
     ni = _sibling("notesimport")
-    raw = ni.read_notes(path)
-    song, info = ni.line_up(raw, stem_onsets(y, sr), pitch_score=ni.stem_pitch_score(y, sr))
+    gp = None
+    if Path(path).suffix.lower() in ni.GP_EXTS:
+        raw, gp = ni.read_gp(path, track)
+    else:
+        raw = ni.read_notes(path)
+    onsets = stem_onsets(y, sr)
+
+    def ref_notes():            # only when no single tempo ratio fits: a quick transcription to follow
+        return [(n.start, n.pitch) for n in transcribe_pyin(y, sr)]
+    song, info = ni.line_up([r[:3] for r in raw], onsets, pitch_score=ni.stem_pitch_score(y, sr),
+                            ref_notes=ref_notes)
     song, info["shortened"] = ni.trim_to_sound(song, y, sr)
-    notes = [Note(start=t, end=t + d, pitch=m) for t, d, m in song]
+    notes = []
+    dur = len(y) / sr
+    info["outside"] = 0
+    for (t, d, m), i in zip(song, info["src"]):
+        if t < 0 or t >= dur:            # before / after the audio (count-in, a longer ending)
+            info["outside"] += 1
+            continue
+        x = raw[i][3] if len(raw[i]) > 3 else {}
+        if x.get("dead"):
+            continue
+        notes.append(Note(start=t, end=t + d, pitch=m, tech=x.get("tech"), legato=bool(x.get("lg")),
+                          string=x.get("s")))
+    info["gp"] = gp
     return make_monophonic(notes, prefer="low"), info
+
+
+def _mmss(t: float) -> str:
+    m, sec = divmod(int(round(max(0.0, float(t)))), 60)
+    return f"{m}:{sec:02d}"
 
 
 def song_bars(notes: list[Note], beats, bpm: float, duration: float,
@@ -1159,6 +1195,10 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
         if opts.bpm:
             # fixed tempo: constant grid, phase is fitted to the notes later
             bpm, beats = float(opts.bpm), np.array([])
+        elif opts.beats:
+            # the beats an earlier run found in the full mix (a result folder re-run)
+            beats = np.asarray(opts.beats, float)
+            bpm = float(60.0 / np.median(np.diff(beats))) if len(beats) > 1 else 120.0
         else:
             report(base, "tempo", "Estimating tempo…")
             bpm, beats = estimate_tempo(librosa.resample(mix_mono, orig_sr=sr, target_sr=22050), 22050)
@@ -1173,6 +1213,7 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
             engine = pick_engine(stem, opts.engine, has_bp)
             lo, hi = PITCH_RANGES.get(stem, ("C1", "C7"))
             tab_tuning = None
+            gp_strings = None          # tuning of a Guitar Pro file whose strings are kept
             auto_tuning = stem == "bass" and str(opts.tuning or "").strip().lower() == "auto"
             if stem == "bass" and opts.tuning:
                 tab_tuning = _fretting().parse_tuning("4" if auto_tuning else opts.tuning)
@@ -1190,7 +1231,34 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                 use = (opts.notes_use or "all").strip()
                 engine = "file" if use.lower() == "all" else "pyin+file"
                 sub(0.05, "transcribe", f"Lining up the notes of {Path(opts.notes_from).name}…")
-                file_notes, imp = notes_from_file(opts.notes_from, stems_audio[stem].mean(axis=0), sr)
+                file_notes, imp = notes_from_file(opts.notes_from, stems_audio[stem].mean(axis=0), sr,
+                                                  opts.notes_track)
+                gp = imp.get("gp")
+                if gp:
+                    res.warnings.append(
+                        f"Guitar Pro track {gp['track_no']} '{gp['track']}'"
+                        + (f" (of {len(gp['tracks'])}: {', '.join(gp['tracks'])}; --track to choose)"
+                           if len(gp["tracks"]) > 1 else "")
+                        + (" — written an octave up (guitar tuning), moved down." if gp.get("octave") else ".")
+                        + (f" {gp['muted']} dead note(s) left out." if gp.get("muted") else "")
+                        + (" Its repeat signs are read once (Guitar Pro 6–8 files): if the song plays them, "
+                           "save the tab as .gp5 (Guitar Pro / TuxGuitar) and use that." if gp.get("repeats_once")
+                           else ""))
+                    if gp.get("tuning") and (auto_tuning or (tab_tuning is not None
+                                                             and list(tab_tuning.strings) == gp["tuning"])):
+                        tab_tuning = _fretting().parse_tuning(gp["tuning"])
+                        named = [k for k, v in _fretting().PRESETS.items() if tuple(v) == tab_tuning.strings]
+                        if named:
+                            tab_tuning = _fretting().parse_tuning(named[0])
+                        gp_strings = tuple(gp["tuning"])
+                        auto_tuning = False
+                        res.warnings.append(f"Tuning from the Guitar Pro file: {tab_tuning.label()}; "
+                                            f"strings and frets as in the tab.")
+                if imp.get("unmatched"):
+                    res.warnings.append(
+                        "Where the file's notes mostly miss the bass attacks (a part missing, repeated or "
+                        "played differently in the file? check in EOF): "
+                        + ", ".join(f"{_mmss(a)}-{_mmss(b)}" for a, b in imp["unmatched"]) + ".")
                 notes = file_notes
                 if engine == "pyin+file":
                     auto = transcribe_pyin(stems_audio[stem].mean(axis=0), sr, lo, hi, opts.min_note_ms,
@@ -1222,6 +1290,9 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                     f"Notes from {Path(opts.notes_from).name}: {imp['notes']} lined up with the bass stem "
                     f"({imp['share_on_attack']:.0%} on an attack; offset {imp['offset']:+.2f} s; "
                     f"{imp.get('shortened', 0)} shortened to where the stem goes quiet"
+                    + (f"; {imp['outside']} fall outside the audio, left out" if imp.get("outside") else "")
+                    + ("; no single tempo ratio fitted — lined up note by note with a quick transcription "
+                       "of the stem" if imp.get("method") == "notes" else "")
                     + (f"; {imp['tempo_note']}" if imp["tempo_note"] else "") + ").")
                 if merge_msg:
                     res.warnings.append(merge_msg)
@@ -1243,6 +1314,7 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                 finally:
                     if tmp is not None:
                         tmp.unlink(missing_ok=True)
+            pre_only = [{"t": n.start, "d": n.duration, "m": n.pitch} for n in notes]
             if stem == "bass" and opts.only:
                 try:
                     keep = parse_bar_spec(opts.only, song_bars(notes, beats, bpm, mix_mono.shape[-1] / sr,
@@ -1265,6 +1337,11 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                 "source": input_path.name,
                 "phrase_bars": opts.phrase_bars,
                 **({"keep_accents": True} if opts.keep_accents else {}),
+                **({"only": opts.only} if opts.only else {}),
+                **({"sustained": True} if opts.sustained else {}),
+                **({"bpm_set": True} if opts.bpm else {}),
+                **({"notes_from": Path(opts.notes_from).name} if opts.notes_from else {}),
+                **({"notes_track": opts.notes_track} if opts.notes_track else {}),
                 **({"five_string": opts.five_string} if opts.five_string != "auto" else {}),
                 **({"parts": opts.parts} if opts.parts and opts.parts.strip().lower() != "auto" else {}),
                 **{k: str(v) for k, v in (opts.meta or {}).items() if v and k in ("artist", "title", "album", "year")},
@@ -1285,7 +1362,13 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                                         f"(Bass tuning → 5-string · B E A D G, or --tuning 5); "
                                         f"for now they were moved up an octave.")
                 sub(0.97, "tab", "Choosing strings and frets…")
-                fret = _fretting().assign_frets(notes, tab_tuning, max_fret=opts.max_fret)
+                keep_strings = None
+                if gp_strings and tuple(tab_tuning.strings) == gp_strings:
+                    def keep_strings(src):          # the tab's own string for each of its notes
+                        s_ = getattr(src, "string", None)
+                        return {s_} if s_ is not None else None
+                fret = _fretting().assign_frets(notes, tab_tuning, max_fret=opts.max_fret,
+                                                allowed=keep_strings)
                 res.warnings.extend(fret.warnings)
                 res.tuning = list(tab_tuning.strings)
                 slap_counts = None
@@ -1372,6 +1455,28 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                                            "the worst bars of this song." if rel else ""))
                 except Exception as e:  # noqa: BLE001
                     res.warnings.append(f"Review not done: {e}")
+            if opts.suggest and stem == "bass" and payload["notes"]:
+                try:
+                    sg = _sibling("suggest")
+                    hints = sg.suggest(stems_audio[stem], sr, pre_only or payload["notes"], bpm,
+                                       payload.get("review"),
+                                       used={"sustained": opts.sustained, "only": opts.only,
+                                             "bpm": opts.bpm, "notes_from": opts.notes_from})
+                    # a 5-string bass is already suggested by the tuning check
+                    if hints:
+                        res.suggestions = hints
+                        res.rerun = sg.command(hints, str(Path(out).resolve()),
+                                               f"--shift {opts.rs_shift:g}" if opts.rs_shift else "")
+                        payload["suggestions"] = hints
+                        for h in hints:
+                            res.warnings.append(f"Worth trying {sg._arg(h)}: {h['why']}.")
+                        res.warnings.append(f"Re-run on the result folder (no new separation): {res.rerun}")
+                        if stem in res.review:
+                            rp = out / res.review[stem]
+                            rp.write_text(rp.read_text(encoding="utf-8") + sg.report(hints, res.rerun),
+                                          encoding="utf-8")
+                except Exception as e:  # noqa: BLE001 — hints are extras
+                    res.warnings.append(f"Option hints not computed: {e}")
             notes_path = out / f"{stem}.notes.json"
             notes_path.write_text(json.dumps(payload), encoding="utf-8")
             res.notes[stem] = notes_path.name
@@ -1497,8 +1602,10 @@ def build_parser() -> argparse.ArgumentParser:
                                    "--slap then also takes part names: --slap verse,chorus")
     p.add_argument("--notes-from", metavar="FILE",
                    help="take the bass notes from another transcriber (AnthemScore, Guitar Pro, MuseScore…): "
-                        "MusicXML (.musicxml/.xml/.mxl) or MIDI. They are lined up with the bass stem "
-                        "(tempo drift included) and go through the rest of the tool (tab, slap, parts, XML)")
+                        "MusicXML (.musicxml/.xml/.mxl), MIDI or Guitar Pro (.gp3/.gp4/.gp5/.gpx/.gp — the "
+                        "bass track as performed, with its strings/frets, tuning and slap/pop/legato). They are "
+                        "lined up with the bass stem (tempo, half/double time and drift included) and go through "
+                        "the rest of the tool (tab, slap, parts, XML)")
     p.add_argument("--use", dest="notes_use", default="all", metavar="WHERE",
                    help="with --notes-from: 'all' (default) — every note from the file; 'doubtful' — "
                         "the built-in transcription, with the bars the review flags taken from the file; "
@@ -1507,6 +1614,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="the bass guitar plays only in these times / bars ('2:50-5:15', '40-90'); notes "
                         "elsewhere are dropped — for songs where orchestra, piano or synth bass fill the "
                         "bass stem before the bass comes in")
+    p.add_argument("--track", dest="notes_track", metavar="N|NAME",
+                   help="Guitar Pro file given to --notes-from: the track to use (number from 1, or part of its "
+                        "name; default: the bass track)")
+    p.add_argument("--no-suggest", action="store_true",
+                   help="don't look for options worth a re-run (--sustained, --only, --bpm, --notes-from)")
     p.add_argument("--sustained", action="store_true",
                    help="ballads / long held notes (over strings, pads): a repeated note counts only when "
                         "it is clearly plucked again — no more one long note cut into many")
@@ -1607,34 +1719,52 @@ def main(argv: list[str] | None = None) -> int:
         build_parser().error("--use: all, doubtful, bar numbers '12-30, 45' or times '1:02-1:30'")
     if args.only and not re.fullmatch(r"[\d:.,\s-]+", args.only):
         build_parser().error("--only: times '2:50-5:15' or bar numbers '40-90'")
+    reuse_beats = None
     if args.notes_from:
         if not Path(args.notes_from).is_file():
             build_parser().error(f"--notes-from: no file {args.notes_from}")
         if Path(args.notes_from).suffix.lower() not in _sibling("notesimport").EXTS:
-            build_parser().error("--notes-from: use MusicXML (.musicxml/.xml/.mxl) or MIDI (.mid)")
-        if src.is_dir():           # a result folder: use its bass stem, write there
-            stem = next((src / f"bass.{e}" for e in ("wav", "flac") if (src / f"bass.{e}").is_file()), None)
-            if stem is None:
-                build_parser().error(f"--notes-from: no bass.wav / bass.flac in {src}")
-            try:
-                old = json.loads((src / "bass.notes.json").read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                old = {}
-            guess = _sibling("rsexport").guess_meta(old.get("source") or src.name.removesuffix("_stems"))
-            for k in ("artist", "title", "album", "year"):
-                if not meta.get(k):
-                    meta[k] = str(old.get(k) or guess.get(k) or "")
-            # keep what the earlier run was given (slap sections, song parts)
-            if not args.slap and old.get("slap_sections"):
-                args.slap = str(old["slap_sections"])
-                print(f"Slap sections from the earlier result: {args.slap}")
-            if not args.parts and old.get("parts"):
-                args.parts = str(old["parts"])
-                print(f"Song parts from the earlier result: {args.parts}")
-            args.out = args.out or str(src)
-            args.skip_separation = True
-            args.input = str(stem)
-            src = stem
+            build_parser().error("--notes-from: use MusicXML (.musicxml/.xml/.mxl), MIDI (.mid) "
+                                 "or Guitar Pro (.gp3/.gp4/.gp5/.gpx/.gp)")
+    # a result folder + an option that changes the notes: transcribe its bass stem again
+    # (no new separation), keeping what the earlier run found (beats, slap, parts…)
+    retranscribe = [o for o, v in (("--notes-from", args.notes_from), ("--sustained", _truthy(args.sustained)),
+                                   ("--bpm", args.bpm)) if v]
+    if retranscribe and src.is_dir():
+        stem = next((src / f"bass.{e}" for e in ("wav", "flac") if (src / f"bass.{e}").is_file()), None)
+        if stem is None:
+            build_parser().error(f"{retranscribe[0]}: no bass.wav / bass.flac in {src}")
+        try:
+            old = json.loads((src / "bass.notes.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            old = {}
+        guess = _sibling("rsexport").guess_meta(old.get("source") or src.name.removesuffix("_stems"))
+        for k in ("artist", "title", "album", "year"):
+            if not meta.get(k):
+                meta[k] = str(old.get(k) or guess.get(k) or "")
+        # keep what the earlier run was given (slap sections, song parts)
+        if not args.slap and old.get("slap_sections"):
+            args.slap = str(old["slap_sections"])
+            print(f"Slap sections from the earlier result: {args.slap}")
+        if not args.parts and old.get("parts"):
+            args.parts = str(old["parts"])
+            print(f"Song parts from the earlier result: {args.parts}")
+        if not args.only and old.get("only"):
+            args.only = str(old["only"])
+            print(f"Bass only in (from the earlier result): {args.only}")
+        if not _truthy(args.sustained) and old.get("sustained"):
+            args.sustained = True
+            print("Long held notes (--sustained) as in the earlier result")
+        if not args.bpm and old.get("bpm_set") and old.get("bpm"):
+            args.bpm = float(old["bpm"])
+            print(f"Tempo as in the earlier result: {args.bpm:g} BPM")
+        if not args.bpm and len(old.get("beats") or []) > 1:
+            reuse_beats = list(old["beats"])
+            print(f"Beats from the earlier result ({len(reuse_beats)}; --bpm to set the tempo instead)")
+        args.out = args.out or str(src)
+        args.skip_separation = True
+        args.input = str(stem)
+        src = stem
     if src.is_dir() or src.name.endswith(".notes.json"):
         # an earlier result: only (re)write the Rocksmith XML
         folder = src if src.is_dir() else src.parent
@@ -1757,6 +1887,7 @@ def main(argv: list[str] | None = None) -> int:
         audio_format=args.audio_format, skip_separation=args.skip_separation, repo=args.repo,
         tuning=None if str(args.tuning).lower() == "none" else args.tuning, max_fret=args.max_fret,
         slap=args.slap, rs_xml=args.rs_xml, meta=meta, rs_shift=args.shift, parts=args.parts or None,
+        beats=reuse_beats, suggest=not args.no_suggest, notes_track=args.notes_track,
         review=args.review, lyrics=lyrics_text, language=args.language,
         phrase_bars=4 if args.phrase_bars is None else max(0, args.phrase_bars),
         notes_from=args.notes_from, notes_use=args.notes_use, five_string=args.rs_5string or "auto",

@@ -245,6 +245,57 @@ def test_notes_from_option():
     o = routes.parse_options({})
     o["notes_from"] = "/jobs/x/notes_from.musicxml"
     assert "--notes-from=/jobs/x/notes_from.musicxml" in routes.build_command("python", Path("a.mp3"), Path("o"), o)
+    o = routes.parse_options({"notes_track": "2"})
+    o["notes_from"] = "/jobs/x/notes_from.gp5"
+    cmd = routes.build_command("python", Path("a.mp3"), Path("o"), o)
+    assert "--notes-from=/jobs/x/notes_from.gp5" in cmd and "--track=2" in cmd
+    assert ".gp5" in routes.NOTES_EXTS
+
+
+def test_guitar_pro_notes_keep_strings_and_legato(tmp_path):
+    """A Guitar Pro tab lined up with a (synthetic) stem keeps the tab's strings,
+    slap and hammer-ons."""
+    gp = pytest.importorskip("guitarpro")
+    pytest.importorskip("librosa")
+    song = gp.Song()
+    song.tempo = 120
+    tr = song.tracks[0]
+    tr.name, tr.channel.instrument = "Bass", 33
+    tr.strings = [gp.GuitarString(i + 1, v) for i, v in enumerate((43, 38, 33, 28))]
+    for _ in range(5):
+        song.newMeasure()
+    # A1 on the A string open (s1 f0) vs E string fret 5: the tab says fret 5 on E
+    pattern = [(5, 4), (7, 4), (5, 3), (3, 3)]
+    for k, m in enumerate(tr.measures):
+        v = m.voices[0]
+        for j, (fret, st) in enumerate(pattern):
+            b = gp.Beat(v, duration=gp.Duration(value=4))
+            b.status = gp.BeatStatus.normal
+            n = gp.Note(b, value=fret, string=st, type=gp.NoteType.normal)
+            if j == 1:
+                n.effect.hammer = True
+            b.notes.append(n)
+            v.beats.append(b)
+    p = tmp_path / "t.gp5"
+    gp.write(song, str(p))
+    sr = 22050
+    y = np.zeros(int(sr * 16), np.float32)
+    opens = {4: 28, 3: 33}
+    for bar in range(6):
+        for j, (fret, st) in enumerate(pattern):
+            t0 = 2.0 + bar * 2.0 + j * 0.5
+            f = 440 * 2 ** ((opens[st] + fret - 69) / 12)
+            tt = np.arange(int(sr * 0.45)) / sr
+            tone = sum(np.sin(2 * np.pi * f * h * tt) / h for h in (1, 2, 3)) * np.exp(-tt * 5)
+            y[int(t0 * sr):int(t0 * sr) + len(tone)] += 0.4 * tone.astype(np.float32)
+    notes, info = s2m.notes_from_file(p, y, sr)
+    assert info["gp"]["tuning"] == [28, 33, 38, 43] and abs(info["offset"] - 2.0) < 0.05
+    assert len(notes) == 24
+    assert [n.string for n in notes[:4]] == [0, 0, 1, 1]
+    assert [n.legato for n in notes[:4]] == [False, True, False, False]
+    fr = s2m._fretting().assign_frets(notes, info["gp"]["tuning"],
+                                      allowed=lambda src: {src.string} if src.string is not None else None)
+    assert [(n.string, n.fret) for n in fr.notes[:4]] == [(0, 5), (0, 7), (1, 5), (1, 3)]
 
 
 def test_cli_lyrics_on_a_result_folder(tmp_path):

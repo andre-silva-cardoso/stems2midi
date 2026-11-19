@@ -190,3 +190,76 @@ def test_rhythm5_from_a_five_string_xml(tmp_path):
     assert n[1].get("string") == "4" and n[1].get("fret") == "2" and n[0].get("slap") == "-1"
     props = r.find("arrangementProperties")
     assert props.get("pathRhythm") == "1" and props.get("bonusArr") == "1" and r.findtext("tonebase") == "bass"
+
+
+# ── dlcfix: hand positions off hammer-ons / pull-offs, plain names ─────────
+
+class _N:
+    def __init__(self, t, f, po=False, ho=False):
+        self.time, self.fret, self.pull_off, self.hammer_on = t, f, po, ho
+
+
+def _anchors(xs):
+    return [ct._Anchor(t, f, w) for t, f, w in xs]
+
+
+def test_anchor_moves_to_the_picked_note():
+    notes = [_N(0, 5), _N(1, 7), _N(1.2, 5, po=True), _N(1.4, 3, po=True), _N(2, 1)]
+    out, n = ct.fix_legato_anchors(notes, _anchors([(0, 5, 4), (1.4, 3, 4), (2, 1, 4)]), ct._Anchor)
+    assert n == 1
+    assert [(a.time, a.fret, a.width) for a in out] == [(0, 5, 4), (1, 3, 5), (2, 1, 4)]
+
+
+def test_hand_position_after_the_run_is_put_back():
+    notes = [_N(0, 10), _N(1, 12), _N(1.2, 10, po=True), _N(1.4, 3, po=False), _N(2, 3)]
+    # the run is 12 → 10; an anchor at 1.2 (fret 8) also covers what follows
+    out, n = ct.fix_legato_anchors(notes, _anchors([(0, 10, 4), (1.2, 8, 4), (1.4, 3, 4)]), ct._Anchor)
+    assert n == 1 and [(a.time, a.fret) for a in out] == [(0, 10), (1, 10), (1.4, 3)]
+
+
+def test_too_wide_for_one_hand_drops_the_legato():
+    notes = [_N(0, 3), _N(1, 3), _N(1.2, 12, ho=True)]
+    out, n = ct.fix_legato_anchors(notes, _anchors([(0, 3, 4), (1.2, 9, 4)]), ct._Anchor)
+    assert n == 1 and not notes[2].hammer_on
+    assert [(a.time, a.fret) for a in out] == [(0, 3), (1.2, 9)]
+
+
+def test_no_change_without_anchor_inside_a_run():
+    notes = [_N(0, 5), _N(1, 7), _N(1.2, 5, po=True)]
+    out, n = ct.fix_legato_anchors(notes, _anchors([(0, 5, 4)]), ct._Anchor)
+    assert n == 0 and len(out) == 1
+
+
+DLC_XML = """<?xml version='1.0' encoding='UTF-8'?>
+<song version="7">
+  <title>Can\u00e7\u00e3o</title>
+  <artistName>Xutos &amp; PontapAs</artistName>
+  <artistNameSort>Xutos &amp; PontapAs</artistNameSort>
+  <levels count="1"><level difficulty="0">
+    <notes count="3">
+      <note time="1.000" string="1" fret="7" />
+      <note time="1.200" string="1" fret="5" pullOff="1" />
+      <note time="2.000" string="1" fret="5" />
+    </notes>
+    <anchors count="2">
+      <anchor time="1.000" fret="7" width="4.000" />
+      <anchor time="1.200" fret="5" width="4.000" />
+    </anchors>
+  </level></levels>
+</song>
+"""
+
+
+def test_dlcfix_cli(tmp_path):
+    d = tmp_path / "Xutos & Pontap\u00e9s - \u00c0 minha maneira"
+    d.mkdir()
+    src = d / "PART REAL_BASS_RS2.xml"
+    src.write_text(DLC_XML, encoding="utf-8")
+    assert ct.main(["dlcfix", str(src), "--from-folder"]) == 0
+    root = ET.parse(str(d / "PART REAL_BASS_RS2.dlc.xml")).getroot()
+    assert root.findtext("artistName") == "Xutos & Pontapes"
+    assert root.findtext("artistNameSort") == "Xutos & Pontapes"
+    assert root.findtext("title") == "A minha maneira"
+    an = root.findall(".//anchor")
+    assert [(a.get("time"), a.get("fret")) for a in an] == [("1.000", "5")]
+    assert root.find(".//anchors").get("count") == "1"

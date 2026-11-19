@@ -368,6 +368,30 @@ orchestra (447 of 738 notes). Two options:
 Slow songs may also get a doubled tempo (143.6 instead of ~72 BPM): the bar
 lines come out half as long — `--bpm 72`.
 
+## Second pass: options worth a re-run (`suggest.py`)
+
+After the first pass the tool looks at what it found and prints the options
+worth trying, with the reason, in the warnings and at the end of
+`bass.review.txt`, plus one command that re-runs on the result folder (its
+bass stem — no new separation; the beats, slap sections, parts, `--only`,
+`--sustained` and a set `--bpm` of the earlier run are kept):
+
+| Hint | When | Fired on |
+|---|---|---|
+| `--sustained` | ≥ 25 % of the notes start right after the same pitch with no dip in level (a held note cut in pieces) | Queen 44 %; others ≤ 17 % |
+| `--only "1:40-4:32"` | ≥ 10 % of the notes (≥ 20, ≥ 20 s) come from stretches where the stem is 12+ dB under its loud part | Queen 42 %; others ≤ 1 % |
+| `--bpm` half | tempo ≥ 135 with the held-notes hint | Queen (143.6 → 71.8) |
+| `--bpm` double | tempo ≤ 85 with a note every ≤ 0.3 beat | Xutos *À minha maneira* (80.7 → 159) |
+| `--notes-from` | the review finds most bars doubtful (+ how weak the fundamental is) | Bandeira (fundamental 9 dB under the harmonics) |
+
+None fired on the other benchmark songs. They are hints, not automatic
+changes: each option also hurts some songs (e.g. a 3 dB re-pluck rule gains
+on Delfins and loses 3 points on Manic). Choosing between two transcriptions
+bar by bar with the review score was tried and gained nothing (≤ 0.001 F1 on
+7 songs): the review spots doubtful bars but can't tell which of two
+plausible readings is right. `--no-suggest` turns the hints off; a 5-string
+bass is already suggested by the tuning check.
+
 ## Notes from another transcriber (`--notes-from`, `notesimport.py`)
 
 Some bass sounds are hard for the built-in tracker. When the bass has almost
@@ -381,11 +405,23 @@ notes (pitches as they are) and puts them on the song's time:
 1. global fit — tempo ratio and offset with the most notes on an attack of the
    bass stem; bass lines repeat, so fits one or two beats off score almost as
    well: the candidates are told apart by how well the stem sounds those
-   pitches (or their harmonics) at those times;
-2. local warp — the median distance to the nearest attack, smoothed over
+   pitches (or their harmonics) at those times. Files written at half / double
+   (or 3:2) the song's tempo — common in hand-made tabs — are tried when the
+   file's length says so, and when fewer than half the notes land on an
+   attack every ratio from 0.4 to 2.6 is (a tab typed in at 100 BPM for a
+   57.5 BPM song: Plutónio *Meu Deus*, ×1.74);
+   when even the best ratio leaves the stem not sounding the file's pitches
+   (the band's tempo changes where the file's doesn't — Iron Maiden *Fear of
+   the Dark*, tab at a fixed 75 BPM), the notes are lined up one by one with a
+   quick transcription of the stem (pitch classes, semi-global alignment),
+   and the result kept if it fits better;
+2. segment re-fit — every 16 notes may move up to ±1 s (a cost for moving
+   keeps repetitive lines from jumping a beat): follows the places where the
+   band holds a beat longer than the file;
+3. local warp — the median distance to the nearest attack, smoothed over
    ±8 s, follows the tempo drift;
-3. every start snapped to the attack it sits on (±60 ms); overlaps cut;
-4. every end trimmed to where the stem goes quiet (10 dB under the note's
+4. every start snapped to the attack it sits on (±60 ms); overlaps cut;
+5. every end trimmed to where the stem goes quiet (10 dB under the note's
    peak): notation programs write bass lines legato, filling the rests, and
    the chart would otherwise hold notes through silences.
 
@@ -415,8 +451,55 @@ python stems2midi.py "Delfins - Bandeira_stems" --notes-from bandeira.mid     # 
 
 UI: *Bass notes from another transcriber* (file) in the form. The result says
 how many notes fell on an attack and the tempo difference (*A Bandeira*:
-749 notes, 77 % on an attack, the file 1.5 % slower than the song,
-+2.63 s). Accepted: `.musicxml`, `.xml`, `.mxl`, `.mid`.
+749 notes, 80 % on an attack, the file 1.5 % slower than the song,
++2.63 s), and the stretches where the file's notes mostly miss the attacks (a
+part missing, repeated or played differently in the file). Accepted:
+`.musicxml`, `.xml`, `.mxl`, `.mid`, and Guitar Pro (below).
+
+### Guitar Pro tabs (`.gp3` `.gp4` `.gp5`, `.gpx` `.gp`)
+
+A tab of the song (Ultimate Guitar, Songsterr exports, your own) given to
+`--notes-from` is read with FeedBack's Guitar Pro reader (`lib/gp2rs.py`, the
+GP import's; `.gpx`/`.gp` through `lib/gp2rs_gpx.py`; the installer ships both
+in `vendor/`; needs PyGuitarPro) and lined up the same way. On top of the
+notes it keeps what the tab says:
+
+* **the bass track** — the first track marked as bass (MIDI program 32–39 or
+  a bass tuning, but not one named strings / synth / vocals… — MIDI-made
+  files put those on low tunings; a name with bass/baixo breaks ties); a file
+  with no bass track says so and lists the tracks; `--track 2` or
+  `--track "Bass 2"` for another (UI: the box under the file);
+* **as performed** — repeats, voltas, D.S./D.C./Coda/Fine expanded, tempo
+  changes followed (`.gpx`/`.gp`: FeedBack's GP6–8 reader plays repeats
+  once — the tool warns; save as `.gp5` then);
+* **the tuning** (with *Bass tuning: auto*: 5-string, drop D, E♭… as in the
+  tab) and **each note's string and fret** — the tab's fingering instead of
+  the tool's;
+* **slap / pop** and **hammer-on / pull-off / slide** marks;
+* dead notes help the fit and are then left out (no pitch);
+* a bass tabbed on a guitar-tuned track (E2 A2 D3 G3 B3 E4) is moved an
+  octave down and fretted by the tool.
+
+Measured on the five songs with a tab and a hand-made chart (bass stem from
+the MP3; aligned F1 vs. the chart, strings/frets in agreement):
+
+| Song | Tab | Lined up | F1 | Strings/frets |
+|---|---|---|---|---|
+| Delfins — Canção de Engate | 110 BPM | +5.83 s | 0.998 | 100 % |
+| Manic — La Tristesse Durera | 98 BPM, 142 dead notes | +3.27 s | 0.958 | 100 % |
+| Phil Collins — Do You Remember | 93 BPM | +3.29 s | 0.972 | 100 % |
+| Xutos — À minha maneira | 158 BPM | +13.35 s | 0.924 | 100 % |
+| Xutos — Circo de feras | 187 BPM for a 96 BPM song | ×1.94, +5.07 s | 0.982 | 100 % |
+
+(The built-in transcription on the same stems: 0.79–0.86.) Without the
+segment re-fit Delfins was 0.853 (the band drifts a beat's worth after 2:50);
+without the double-time search Circo was 0.17. The AnthemScore MusicXML of
+Circo de feras gains the same way (0.17 → 0.98).
+
+```bash
+python stems2midi.py "Xutos & Pontapés - Circo de feras.mp3" --notes-from "Circo de feras.gp5"
+python stems2midi.py "Circo de feras_stems" --notes-from "Circo de feras.gp5" --track 2
+```
 
 When most bars of a song look doubtful to the review (a stem like this), it
 ranks the bars within the song instead (the worst 15 % = *likely wrong*, the
@@ -590,6 +673,18 @@ no numpy, and PyGuitarPro isn't needed for writing.
   **without accents** (Canção → Cancao): EOF garbles them ("CanAAo") and
   Rocksmith's font has no accented letters. `--keep-accents` keeps them;
   `chart_tools.py structure` does the same to EOF's XML.
+* **DLC Builder names the .psarc** from artist / title (their sort fields). If
+  the project went through EOF with accents in its song properties, EOF writes
+  them garbled ("Pontapés" → "PontapAs", "Canção" → "CanAAo") and that ends up
+  in the package name. Fix them in EOF (*Song > Properties*) or in DLC Builder,
+  or run `chart_tools.py dlcfix "PART REAL_BASS_RS2.xml" --from-folder` (artist
+  and title from the folder name "Artist - Title", without accents).
+* **No hand-position change on a hammer-on / pull-off** (DLC Builder:
+  *position shift into pull-off*): for each run of legato notes with an anchor
+  change inside it, one anchor at the picked note covers the run (width up to
+  6 frets) and the hand position after the run comes back at the next note; a
+  run too wide for one hand position loses the hammer-on/pull-off where the
+  hand moves. XMLs edited in EOF: `chart_tools.py dlcfix`.
 * UI: **Rocksmith XML** button next to *Download bass.mid*; under the roll,
   *Rocksmith XML with other artist / title…* re-exports with other metadata.
 * To redo only the XML of an earlier result (other metadata, or a result made

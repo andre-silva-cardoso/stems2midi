@@ -124,8 +124,10 @@
           <option value="bars">only in these bars…</option>
         </select>
         <input id="s2m-notes-bars" class="s2m-input" type="text" spellcheck="false" hidden placeholder="bars as in EOF: 12-30, 45-60   or times: 1:02-1:30">
-        <input id="s2m-notes-file" class="s2m-input" type="file" accept=".musicxml,.xml,.mxl,.mid,.midi"
-               title="MusicXML or MIDI from AnthemScore, Guitar Pro, MuseScore…: its notes are lined up with the bass stem (tempo drift included) and used instead of the built-in transcription — tab, slap, parts and Rocksmith XML as usual. Useful when the bass has almost no fundamental and the built-in tracker loses notes.">
+        <input id="s2m-notes-file" class="s2m-input" type="file" accept=".musicxml,.xml,.mxl,.mid,.midi,.gp3,.gp4,.gp5,.gpx,.gp"
+               title="Guitar Pro tab (.gp3/.gp4/.gp5/.gpx/.gp), MusicXML or MIDI (AnthemScore, MuseScore…): its notes are lined up with the bass stem (tempo, half/double time and drift included) and used instead of the built-in transcription — tab, slap, parts and Rocksmith XML as usual. A Guitar Pro tab keeps its strings, frets, tuning, slap/pop and hammer-ons/pull-offs.">
+        <input id="s2m-notes-track" class="s2m-input" type="text" spellcheck="false" placeholder="Guitar Pro track (number or name; empty = the bass track)"
+               title="Only for Guitar Pro files with more than one bass track, or a bass on a track not marked as bass.">
       </div>
       <div class="s2m-wide">
         <label class="s2m-label" for="s2m-lyrics">Lyrics (optional) → UltraStar .txt + Rocksmith vocals XML
