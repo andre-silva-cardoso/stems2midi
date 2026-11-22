@@ -137,6 +137,12 @@
           </select></label>
         <textarea id="s2m-lyrics" class="s2m-input s2m-lyrics" rows="3" spellcheck="false"
                   placeholder="One sung line per line, every repeat written out (no [Chorus] x2). Syllables are split automatically, or mark them yourself: un-faith-ful" title="Lined up with the vocals stem: you get vocals.ultrastar.txt (open in UltraStar Creator to fine-tune, or import in EOF: File → Import → Lyrics) and vocals_RS2.xml (Rocksmith vocals for DLC Builder). Times follow lead_silence like the bass XML."></textarea>
+        <label class="s2m-small s2m-dim" title="Looks up the album art (iTunes, Cover Art Archive → cover.jpg) and the lyrics (LRCLIB → lyrics.txt, lined up with the vocals when the box above is empty) by artist and title from the file name ('Artist - Title.mp3'). Also fills album and year. Files already in the result folder are kept."><input type="checkbox" id="s2m-fetch"> look up album art and lyrics on the web</label>
+      </div>
+      <div>
+        <label class="s2m-label" for="s2m-charter">Charter name (DLC Builder project)</label>
+        <input id="s2m-charter" class="s2m-input" type="text" spellcheck="false" maxlength="40" placeholder="e.g. ALSRC (default: charter in stems2midi.ini)"
+               title="Author of the DLC Builder project written with the XML (Artist_Title.rs2dlc + song.ogg): open it in DLC Builder, add tones, build. Set it once in stems2midi.ini: charter = ALSRC">
       </div>
       <div id="s2m-tuning-custom-box" hidden>
         <label class="s2m-label" for="s2m-tuning-custom">Custom tuning (low → high)</label>

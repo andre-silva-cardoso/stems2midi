@@ -239,6 +239,8 @@ async function submit() {
         fd.append('notes_track', $('#s2m-notes-track').value.trim());
     }
     fd.append('lyrics', $('#s2m-lyrics').value);
+    fd.append('fetch_meta', $('#s2m-fetch').checked ? 'true' : 'false');
+    fd.append('charter', $('#s2m-charter').value.trim());
     fd.append('language', $('#s2m-language').value);
     fd.append('backing', $('#s2m-backing').checked ? 'true' : 'false');
     fd.append('skip_separation', $('#s2m-skip').checked ? 'true' : 'false');

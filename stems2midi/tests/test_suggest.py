@@ -63,3 +63,29 @@ def test_hard_review_suggests_notes_from_and_command():
     cmd = sg.command(hints, "C:/x y", "--shift 5")
     assert cmd.endswith('"C:/x y" --notes-from "<file.gp5|.musicxml>" --shift 5')
     assert "Worth trying" in sg.report(hints, cmd) and cmd in sg.report(hints, cmd)
+
+
+def test_bass_missing_from_its_stem_suggests_another_model():
+    rng = np.random.default_rng(1)
+    low = _tone(20.0, midi=40, amp=0.5)                       # the bass, ended up in "guitar"
+    stems = {"bass": (low * 0.03)[None, :], "guitar": (low * 0.97)[None, :],
+             "drums": (rng.normal(0, 0.05, len(low)).astype(np.float32))[None, :]}
+    h = sg.weak_stem(stems, SR, "htdemucs_6s")
+    assert h["option"] == "--model" and h["value"] == "htdemucs_ft" and h.get("source")
+    assert '"guitar"' in h["why"]
+    assert sg.weak_stem(stems, SR, "htdemucs_ft")["option"] == "--skip-separation"
+    ok = {"bass": low[None, :], "drums": stems["drums"]}
+    assert sg.weak_stem(ok, SR, "htdemucs_6s") is None
+    cmd = sg.command([h], "C:/out/song_stems", source="C:/m/song.mp3")
+    assert cmd.endswith('"C:/m/song.mp3" -o "C:/out/song_stems" --model htdemucs_ft')
+    assert "Run the song again" in sg.report([h], cmd)
+
+
+def test_bass_resting_half_the_song_is_not_a_weak_stem():
+    rng = np.random.default_rng(2)
+    orch = _tone(20.0, midi=36, amp=0.5)
+    bass = np.concatenate([np.zeros(len(orch) // 2, np.float32), _tone(10.0, midi=40, amp=0.5)])
+    orch[len(orch) // 2:] *= 0.1
+    stems = {"bass": bass[None, :], "other": orch[None, :],
+             "drums": rng.normal(0, 0.05, len(orch)).astype(np.float32)[None, :]}
+    assert sg.weak_stem(stems, SR, "htdemucs_6s") is None

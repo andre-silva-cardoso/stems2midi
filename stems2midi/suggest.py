@@ -18,6 +18,12 @@ song that didn't need it.
 * --bpm         tempo octave: a fast tempo with long notes cut in pieces
                 (ballad heard twice as fast), or a slow tempo with notes on
                 every 16th (rock heard half as fast — Xutos: 80.7 for 159).
+* --model       the bass stem holds far less of the song's low end than the
+                mix does: the separation put the bass elsewhere (a thin,
+                high or mid-heavy bass ends up in "guitar"/"other" with the
+                6-stem model — Delfins, Lugar ao Sol: bass stem 21 dB under
+                the mix below 250 Hz). Try htdemucs_ft, or a stem from another
+                separator with --skip-separation.
 * --notes-from  the review finds most bars doubtful (the stem is hard to
                 read; Bandeira: 84 %, its fundamental 9 dB under the
                 harmonics): a dedicated transcriber (AnthemScore…) read in.
@@ -46,6 +52,10 @@ QUIET_MIN_S = 20.0
 FAST_BPM = 135.0
 SLOW_BPM = 85.0
 SLOW_IOI_BEATS = 0.3       # median gap between notes ≤ this many beats → 16ths at that tempo
+
+WEAK_STEM_DB = 12.0        # bass stem's low end (40-250 Hz) this much under the mix's → separation missed it
+LOW_BAND = (40.0, 250.0)
+BETTER_MODEL = "htdemucs_ft"
 
 HARD_SHARE = 0.5           # review: bars "likely wrong" above this share → stem hard to read
 WEAK_F0_DB = 6.0           # harmonics louder than the fundamental by this much (median)
@@ -142,6 +152,60 @@ def harmonic_excess(y: np.ndarray, notes: list[dict]) -> float:
     return float(np.median(out)) if out else 0.0
 
 
+def low_end_frames(y: np.ndarray) -> np.ndarray:
+    """Energy of the 40-250 Hz band per ~0.09 s frame (mono, 11025 Hz)."""
+    import librosa
+    if len(y) < 4096:
+        return np.zeros(1)
+    S = np.abs(librosa.stft(y, n_fft=4096, hop_length=1024)) ** 2
+    fq = librosa.fft_frequencies(sr=SR, n_fft=4096)
+    band = (fq >= LOW_BAND[0]) & (fq < LOW_BAND[1])
+    return S[band].sum(axis=0)
+
+
+def low_end_gap(bass: np.ndarray, mix: np.ndarray, win_s: float = QUIET_WIN_S) -> tuple[float, float]:
+    """(gap, overall): how many dB the bass stem's low end is under the mix's.
+    ``gap`` is taken over the best quarter of the loud 4 s windows, so a bass
+    that simply rests for half the song (orchestra intro) doesn't count."""
+    eb, em = low_end_frames(bass), low_end_frames(mix)
+    n = min(len(eb), len(em))
+    eb, em = eb[:n], em[:n]
+    per = max(1, int(round(win_s * SR / 1024)))
+    nw = max(1, n // per)
+    wb = np.array([eb[i * per:(i + 1) * per].mean() for i in range(nw)])
+    wm = np.array([em[i * per:(i + 1) * per].mean() for i in range(nw)])
+    db = lambda x: 10 * np.log10(x + 1e-12)          # noqa: E731
+    loud = db(wm) >= db(wm.max()) - 20
+    gaps = db(wm[loud]) - db(wb[loud])
+    return float(np.percentile(gaps, 25)), float(db(em.mean()) - db(eb.mean()))
+
+
+def weak_stem(stems: dict, sr: int, model: str = "", stem: str = "bass") -> dict | None:
+    """Hint when the separation left the bass out of its stem: the stem's low
+    end far under the mix's (the mix = the sum of the stems). Names the stem
+    that got most of the low end. ``stems``: {name: audio (channels, n)}."""
+    if stem not in stems or len(stems) < 2:
+        return None
+    mono = {k: _mono(v, sr) for k, v in stems.items()}
+    mix = np.sum([mono[k][:min(len(x) for x in mono.values())] for k in mono], axis=0)
+    gap, overall = low_end_gap(mono[stem], mix)
+    if gap < WEAK_STEM_DB:
+        return None
+    gap = overall
+    lows = {k: float(low_end_frames(v).mean()) for k, v in mono.items()}
+    other = max((k for k in lows if k != stem), key=lambda k: lows[k])
+    where = f'; most of it is in the "{other}" stem' if lows[other] > 2 * lows[stem] else ""
+    if model != BETTER_MODEL:
+        return {"option": "--model", "value": BETTER_MODEL, "source": True,
+                "why": f"the bass stem has {gap:.0f} dB less low end (40-250 Hz) than the song{where} — the "
+                       f"separation missed much of the bass (a thin or high bass is often taken for guitar). "
+                       f"Separate again with the 4-stem fine-tuned model ({BETTER_MODEL}, ~4x slower), or "
+                       f"transcribe a bass stem from another separator with --skip-separation"}
+    return {"option": "--skip-separation", "value": "<bass stem from another separator>", "source": True,
+            "why": f"the bass stem has {gap:.0f} dB less low end (40-250 Hz) than the song{where}, even with "
+                   f"{BETTER_MODEL} — separate the bass with another tool and transcribe that file"}
+
+
 def suggest(y: np.ndarray, sr: int, notes: list[dict], bpm: float, review: list[dict] | None = None,
             used: dict | None = None) -> list[dict]:
     """Options worth a re-run, as [{"option", "value", "why"}]. ``notes`` are
@@ -207,12 +271,22 @@ def _arg(s: dict) -> str:
     return f'{s["option"]} "{v}"' if any(c in v for c in " ,<>") else f"{s['option']} {v}"
 
 
-def command(suggestions: list[dict], folder: str = "", extra: str = "") -> str:
+def command(suggestions: list[dict], folder: str = "", extra: str = "", source: str = "") -> str:
     """One re-run with every hint: the result folder + the options (no new
-    separation — the bass stem in the folder is used)."""
+    separation — the bass stem in the folder is used). A hint that needs a new
+    separation (``"source": True``, e.g. another model) runs on ``source``
+    (the song file) instead, into the same folder."""
     import os
-    args = " ".join([_arg(s) for s in suggestions] + ([extra] if extra else []))
     tool = "stems2midi.bat" if os.name == "nt" else "stems2midi"
+    skip = next((s for s in suggestions if s.get("option") == "--skip-separation"), None)
+    if skip is not None:
+        return f'{tool} "{skip.get("value")}" --skip-separation' + (f" {extra}" if extra else "")
+    if any(s.get("source") for s in suggestions) and source:
+        hints = suggestions
+        args = " ".join([_arg(s) for s in hints] + ([extra] if extra else []))
+        out = f' -o "{folder}"' if folder else ""
+        return f'{tool} "{source}"{out} {args}'.strip()
+    args = " ".join([_arg(s) for s in suggestions] + ([extra] if extra else []))
     return f'{tool} "{folder}" {args}'.strip() if folder else args
 
 
@@ -224,6 +298,9 @@ def report(suggestions: list[dict], rerun: str = "") -> str:
     for s in suggestions:
         lines.append(f"  {_arg(s)}")
         lines.append(f"      {s['why']}.")
-    lines.append("Re-run on this result folder (uses its bass stem, no new separation):")
+    if any(s.get("source") for s in suggestions):
+        lines.append("Run the song again (new separation):")
+    else:
+        lines.append("Re-run on this result folder (uses its bass stem, no new separation):")
     lines.append(f"  {rerun or command(suggestions, '<this folder>')}")
     return "\n".join(lines) + "\n"

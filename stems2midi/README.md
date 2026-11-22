@@ -314,6 +314,9 @@ lead_silence = 5
 ;model = htdemucs_6s
 ;language = pt            ; lyrics language (default: guessed from the text)
 ;phrase_bars = 4          ; Rocksmith phrase (Riff Repeater unit) length; 0 = one per section
+;charter = ALSRC          ; author of the DLC Builder project (and its DLC key)
+;fetch_meta = yes         ; look up album art + lyrics on the web (iTunes, LRCLIB)
+;dlc_project = yes        ; write Artist_Title.rs2dlc + song.ogg next to the XML
 
 [feedback]
 ; where the installer copies the plugin
@@ -383,6 +386,7 @@ bass stem — no new separation; the beats, slap sections, parts, `--only`,
 | `--bpm` half | tempo ≥ 135 with the held-notes hint | Queen (143.6 → 71.8) |
 | `--bpm` double | tempo ≤ 85 with a note every ≤ 0.3 beat | Xutos *À minha maneira* (80.7 → 159) |
 | `--notes-from` | the review finds most bars doubtful (+ how weak the fundamental is) | Bandeira (fundamental 9 dB under the harmonics) |
+| `--model htdemucs_ft` | the bass stem's low end (40–250 Hz) is 12+ dB under the song's in its best quarter of 4 s windows — the separation put the bass elsewhere (a thin / high bass taken for guitar by the 6-stem model). Already on `htdemucs_ft`: `--skip-separation` with a stem from another separator. Runs the song again (new separation) | Delfins *Lugar ao Sol* (29.7 dB; a web separator's stem: 4.2); Bandeira 4.7 |
 
 None fired on the other benchmark songs. They are hints, not automatic
 changes: each option also hurts some songs (e.g. a 3 dB re-pluck rule gains
@@ -658,6 +662,46 @@ In EOF itself: select notes (drag, or Ctrl+A) → Note › Rocksmith › Toggle 
 Slap (Ctrl+Shift+S) / Pop (Ctrl+Shift+P); Edit › Selection › Conditional
 deselect (Alt+D) keeps only notes on chosen strings; Beat › Rocksmith › Place
 RS Section (Shift+S) places one section at a time.
+
+## DLC Builder project, album art and lyrics (`dlcproject.py`, `metafetch.py`)
+
+Next to `bass_RS2.xml` the tool writes a **DLC Builder project**,
+`Artist_Title.rs2dlc`, and the song audio for it (`song.ogg`, or
+`song_lead5s.ogg` with 5 s of silence added when the XML is moved for EOF's
+lead-in): open the project in DLC Builder, add the tones, build. It holds:
+
+* **Author** = your charter name (`--charter ALSRC`, or once in
+  `stems2midi.ini`: `charter = ALSRC`; without it DLC Builder uses the one in
+  its settings) and a **DLC key** made of it + artist + title
+  (`ALSRCDelfinsLugarAoSol`).
+* artist / title / album / year (sort fields in plain letters, a leading
+  "The" moved off — DLC Builder names the .psarc from them), `cover.jpg` when
+  there is one, and the arrangements in the folder: bass, the 5-string Rhythm
+  XML, `vocals_RS2.xml`. Tuning and A440/A220 come from each XML.
+* Paths relative to the project, so the folder can be moved. Running again on
+  the folder (`--shift`, `--parts`, `--lyrics`…) **updates** the project and
+  keeps what you set in DLC Builder (tones, preview, volumes, IDs, other
+  arrangements). `--no-dlc-project` (ini `dlc_project = no`) turns it off.
+* With `--skip-separation` the input is a stem, not the song: the audio is
+  left for you to set in DLC Builder (or taken from an earlier `song.ogg`, or
+  rebuilt from `bass` + `backing_no_bass` in the folder).
+
+**`--fetch-meta`** (ini `fetch_meta = yes`, a checkbox on the plugin screen)
+looks the song up by artist and title (from "Artist - Title.mp3", or
+`--artist/--title`; track numbers, accents and "(Remastered)" don't matter):
+
+* **album art** from iTunes Search (1000×1000), else MusicBrainz + Cover Art
+  Archive → `cover.jpg` (DLC Builder converts it);
+* **lyrics** from LRCLIB (lrclib.net, open lyrics database) → `lyrics.txt`
+  (section headers out, one sung line per line) and `lyrics.lrc` when it has
+  line timings. Without `--lyrics` they are lined up with the vocals as if
+  given — check them; edit `lyrics.txt` and run on the folder with
+  `--lyrics lyrics.txt` to redo;
+* a missing album / year from the iTunes match.
+
+Files already in the folder are kept. No network or no match is just a note.
+Genius has no lyrics API and its terms don't allow fetching its pages, so it
+isn't used.
 
 ## Rocksmith XML (`rsexport.py`)
 

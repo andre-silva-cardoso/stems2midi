@@ -18,6 +18,9 @@ Example::
     model = htdemucs_6s
     language = pt            ; lyrics language (default: guessed)
     phrase_bars = 4          ; Rocksmith phrases every N bars (0 = one per section)
+    charter = ALSRC          ; author of the DLC Builder project (and its DLC key)
+    fetch_meta = yes         ; look up album art + lyrics on the web (iTunes, LRCLIB)
+    dlc_project = yes        ; write Artist_Title.rs2dlc + song.ogg next to the XML
 
     [feedback]
     plugins_dir = C:\\Program Files\\feedback\\current\\resources\\slopsmith\\plugins
@@ -57,6 +60,9 @@ CLI_KEYS = {
     "keep_accents": "keep_accents",
     "rs_5string": "rs_5string",
     "sustained": "sustained",
+    "charter": "charter",
+    "dlc_project": "dlc_project",
+    "fetch_meta": "fetch_meta",
 }
 
 

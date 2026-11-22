@@ -60,6 +60,8 @@ PREFERÊNCIAS (stems2midi.ini)
     plugins_dir  = <pasta>      pasta de plugins do FeedBack (por omissão
                                 C:\Program Files\feedback\current\resources\slopsmith\plugins)
   Qualquer opção da linha de comandos pode ter aqui um valor por omissão (ex.: tuning = 5).
+  Úteis:  charter = ALSRC     (o seu nome de autor no projeto do DLC Builder)
+          fetch_meta = yes    (procurar sempre capa e letra na web)
 • Se a pasta de plugins estiver em "Program Files", o instalador pede autorização de
   administrador para copiar o plugin. Depois de atualizar o FeedBack, corra de novo o INSTALAR.bat.
 
@@ -90,6 +92,11 @@ SEGUNDA PASSAGEM (opções sugeridas)
     --only "..."  muitas notas em trechos onde o stem está 12+ dB mais baixo (outros instrumentos)
     --bpm N       andamento provavelmente a dobrar (baladas) ou a metade (16 avos a ~80 BPM)
     --notes-from  a revisão acha a maioria dos compassos duvidosos (ex.: pouca fundamental)
+    --model htdemucs_ft   o stem do baixo tem muito menos graves (12+ dB) do que a música: a
+                  separação pôs o baixo noutro stem (baixo "magro"/agudo tomado por guitarra,
+                  ex.: Delfins - Lugar ao Sol). Este separa outra vez (comando sobre o mp3).
+                  Se já usou htdemucs_ft: separe o baixo noutra ferramenta e transcreva o
+                  ficheiro dela com --skip-separation
   São palpites: ouça antes de aplicar. Para não aparecerem: --no-suggest
     stems2midi.bat "Queen - Who Wants to Live Forever_stems" --sustained --only "2:50-5:20" --bpm 71.8
 
@@ -125,6 +132,29 @@ NOTAS DE OUTRO TRANSCRITOR (Guitar Pro, AnthemScore, MuseScore)
     --use doubtful     transcrição da ferramenta, e os compassos duvidosos da revisão vêm do ficheiro
     --use "12-30, 45"  esses compassos (números do EOF) do ficheiro;  ou tempos: --use "1:02-1:30"
   No fim diz que compassos vieram do ficheiro. No FeedBack: escolha ao lado do ficheiro.
+
+PROJETO DO DLC BUILDER, CAPA E LETRA
+• Junto do bass_RS2.xml sai um projeto do DLC Builder, "Artista_Título.rs2dlc", e o áudio
+  para ele (song.ogg; com lead_silence 5: song_lead5s.ogg, com os 5 s de silêncio). Abra o
+  projeto no DLC Builder, junte os tons (Import tones de um psarc, ou a sua coleção) e faça
+  o build. Leva: autor (o seu nome de charter), chave DLC (ALSRC + artista + título),
+  artista/título/álbum/ano, a capa (cover.jpg) e os arranjos da pasta (baixo, Rhythm de
+  5 cordas, vocals_RS2.xml).
+• O seu nome de autor:  --charter ALSRC   ou uma vez no stems2midi.ini:  charter = ALSRC
+  (sem ele o DLC Builder usa o "Charter name" das definições dele). Para o nome também
+  aparecer no ficheiro .psarc, o DLC Builder 3.5+ tem nas definições uma opção para
+  acrescentar palavras ao fim do nome do pacote.
+• Correr outra vez na pasta (--shift, --parts, --lyrics…) atualiza o projeto e mantém o que
+  mudou no DLC Builder (tons, preview, volumes). Para não o fazer: --no-dlc-project
+• Com --skip-separation (stem de outro separador) o áudio fica por indicar no DLC Builder.
+• Capa e letra da web:  --fetch-meta   (no FeedBack: "look up album art and lyrics")
+    capa  → cover.jpg   (iTunes, ou MusicBrainz / Cover Art Archive)
+    letra → lyrics.txt  (LRCLIB, lrclib.net; lyrics.lrc se tiver tempos por linha)
+  Procura pelo artista e título do nome do ficheiro ("Artista - Título.mp3"; números de faixa
+  e acentos não atrapalham). Sem --lyrics, a letra encontrada é alinhada com a voz: confira-a,
+  corrija o lyrics.txt e corra na pasta com --lyrics lyrics.txt para refazer. Também preenche
+  álbum e ano se faltarem. Ficheiros que já estejam na pasta não são substituídos.
+  O Genius não tem API de letras e os termos dele não permitem descarregá-las.
 
 REVISÃO (compassos a verificar)
 • Depois da transcrição, cada compasso é comparado com o stem do baixo e é escrito

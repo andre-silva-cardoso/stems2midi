@@ -216,6 +216,16 @@ def test_parse_options_sanitises():
     assert "--no-backing" in cmd and cmd[cmd.index("--midi") + 1] == "none"
 
 
+def test_charter_and_fetch_options():
+    import routes
+    o = routes.parse_options({"charter": "ALSRC; rm -rf <x>", "fetch_meta": "true"})
+    assert o["charter"] == "ALSRC rm -rf x" and o["fetch_meta"] is True
+    cmd = routes.build_command("python", Path("in.mp3"), Path("out"), o)
+    assert "--fetch-meta" in cmd and "--charter=ALSRC rm -rf x" in cmd
+    cmd = routes.build_command("python", Path("in.mp3"), Path("out"), routes.parse_options({}))
+    assert "--fetch-meta" not in cmd and not any(c.startswith("--charter") for c in cmd)
+
+
 def test_tuning_option():
     import routes
     assert routes.parse_options({})["tuning"] == "auto"
@@ -674,3 +684,28 @@ def test_double_triggers_and_sustained_repeats():
     rise[160:165] = 0.0                     # a real re-pluck: +10 dB
     kept = s2m.merge_weak_repeats([N(1.0, 1.6, 31), N(1.6, 2.4, 31)], env, hop, rise_curve=rise, min_rise_db=4.0)
     assert len(kept) == 2
+
+
+def test_pipeline_fetches_cover_and_writes_project(tmp_path, monkeypatch):
+    pytest.importorskip("librosa")
+    sf = pytest.importorskip("soundfile")
+    pytest.importorskip("mido")
+    mf = s2m._sibling("metafetch")
+    jpeg = b"\xff\xd8\xff\xe0" + b"x" * 3000
+    monkeypatch.setattr(mf, "get_json", lambda url: {"results": [
+        {"artistName": "Delfins", "trackName": "Lugar ao Sol", "collectionName": "Ao Vivo",
+         "artworkUrl100": "https://x/100x100bb.jpg", "releaseDate": "1998-01-01"}]} if "itunes" in url else None)
+    monkeypatch.setattr(mf, "get_bytes", lambda url: jpeg)
+    y, sr, truth = _pluck_line()
+    src = tmp_path / "Delfins - Lugar ao Sol.wav"
+    sf.write(str(src), y, sr)
+    res = s2m.run_pipeline(src, tmp_path / "out", s2m.Options(skip_separation=True, bpm=110, fetch_meta=True,
+                                                              charter="ALSRC", review=False, suggest=False))
+    out = tmp_path / "out"
+    assert res.fetched["cover"] == "cover.jpg" and (out / "cover.jpg").read_bytes() == jpeg
+    assert "<albumName>Ao Vivo</albumName>" in (out / "bass_RS2.xml").read_text(encoding="utf-8")
+    proj = json.loads((out / res.project).read_text(encoding="utf-8"))
+    assert res.project == "Delfins_Lugar-ao-Sol.rs2dlc" and proj["Author"] == "ALSRC"
+    assert proj["AlbumArtFile"] == "cover.jpg" and proj["Year"] == 1998
+    # the input is a stem here: not used as the song audio
+    assert proj["AudioFile"]["Path"] == "" and any("set it in DLC Builder" in w for w in res.warnings)

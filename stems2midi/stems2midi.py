@@ -47,7 +47,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.2.5"
+__version__ = "1.2.6"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -149,6 +149,9 @@ class Options:
     five_string: str = "auto"               # 5-string tab in Rocksmith: auto | bass (4-string B) | rhythm (also a Rhythm XML)
     max_fret: int = 24
     suggest: bool = True                    # look for options worth a re-run (suggest.py)
+    charter: str = ""                       # DLC Builder project author (charter name, e.g. ALSRC)
+    dlc_project: bool = True                # write a DLC Builder project (.rs2dlc) next to the XML
+    fetch_meta: bool = False                # look up album art + lyrics (iTunes / LRCLIB) into the folder
 
 
 @dataclass
@@ -169,6 +172,8 @@ class Result:
     warnings: list = field(default_factory=list)
     suggestions: list = field(default_factory=list)  # [{"option", "value", "why"}] worth a re-run
     rerun: str = ""                                   # the re-run command with them
+    project: str = ""                                 # DLC Builder project (.rs2dlc)
+    fetched: dict = field(default_factory=dict)       # cover / lyrics files looked up on the web
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1135,6 +1140,138 @@ def pick_engine(stem: str, engine: str, has_basic_pitch: bool) -> str:
     return "basic-pitch"
 
 
+def _add_hints(res: Result, hints: list[dict], out: Path, opts: Options, input_path: Path,
+               payload: dict | None = None) -> None:
+    sg = _sibling("suggest")
+    res.suggestions = list(res.suggestions) + [h for h in hints if h not in res.suggestions]
+    res.rerun = sg.command(res.suggestions, str(Path(out).resolve()),
+                           f"--shift {opts.rs_shift:g}" if opts.rs_shift else "",
+                           source=str(Path(input_path).resolve()))
+    if payload is not None:
+        payload["suggestions"] = res.suggestions
+    for h in hints:
+        res.warnings.append(f"Worth trying {sg._arg(h)}: {h['why']}.")
+    new_sep = any(h.get("source") for h in res.suggestions)
+    res.warnings = [w for w in res.warnings if not w.startswith(("Re-run on the result folder", "Run again:"))]
+    res.warnings.append(("Run again: " if new_sep else "Re-run on the result folder (no new separation): ")
+                        + res.rerun)
+
+
+# ── DLC Builder project, song audio, cover / lyrics ──────────────────────
+
+def song_audio_name(shift: float = 0.0) -> str:
+    """song.ogg, or song_lead5s.ogg when the XML is moved for EOF's lead-in."""
+    return "song.ogg" if not shift else f"song_lead{shift:g}s.ogg"
+
+
+def write_song_audio(folder: Path, audio: np.ndarray, sr: int, shift: float = 0.0) -> str:
+    """The song for DLC Builder, moved like the XML (silence added for a
+    lead-in, cut for a negative shift). Ogg Vorbis (wav if that fails)."""
+    import soundfile as sf
+    a = np.atleast_2d(np.asarray(audio, np.float32))
+    n = int(round(abs(shift) * sr))
+    if shift > 0:
+        a = np.concatenate([np.zeros((a.shape[0], n), np.float32), a], axis=1)
+    elif shift < 0:
+        a = a[:, n:]
+    peak = float(np.max(np.abs(a))) if a.size else 0.0
+    if peak > 0.999:
+        a = a * (0.999 / peak)
+    name = song_audio_name(shift)
+    try:
+        sf.write(str(folder / name), a.T, sr, format="OGG", subtype="VORBIS")
+    except Exception:  # noqa: BLE001 — libsndfile without Vorbis
+        name = name[:-4] + ".wav"
+        sf.write(str(folder / name), a.T, sr, subtype="PCM_16")
+    return name
+
+
+def song_audio_for(folder: Path, shift: float = 0.0, source: str | Path | None = None) -> tuple[str, str]:
+    """(audio file for the project, note). Reuses an earlier song*.ogg made
+    for this shift; else rebuilds it from the song file (next to the folder)
+    or from the stems (bass + backing)."""
+    folder = Path(folder)
+    name = song_audio_name(shift)
+    for cand in (name, name[:-4] + ".wav"):
+        if (folder / cand).is_file():
+            return cand, ""
+    src = None
+    if source:
+        for p in (Path(source), folder.parent / Path(source).name, folder / Path(source).name):
+            if p.is_file() and p.suffix.lower() not in (".json",):
+                src = p
+                break
+    try:
+        if src is not None:
+            if src.suffix.lower() in _sibling("dlcproject").AUDIO_EXTS and not shift and src.parent == folder:
+                return src.name, ""
+            return write_song_audio(folder, load_audio(src, 44100, channels=2), 44100, shift), ""
+        files = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".wav", ".flac"))
+        backing = [p for p in files if p.stem.startswith("backing_no_")]
+        if backing:
+            removed = backing[0].stem[len("backing_no_"):].split("_")
+            parts = [backing[0]] + [p for p in files if p.stem in removed]
+            if len(parts) == 1 + len(removed):
+                data = [load_audio(p, 44100, channels=2) for p in parts]
+                n = max(d.shape[1] for d in data)
+                mix = np.sum([np.pad(d, ((0, 0), (0, n - d.shape[1]))) for d in data], axis=0)
+                return write_song_audio(folder, mix, 44100, shift), ""
+    except Exception as e:  # noqa: BLE001
+        return "", f"song audio not made ({e}) — set it in DLC Builder"
+    return "", "no song audio found for the project — set it in DLC Builder (wav/ogg)"
+
+
+def write_dlc_project(folder: str | Path, charter: str = "", meta: dict | None = None, shift: float = 0.0,
+                      mix: np.ndarray | None = None, sr: int = 44100,
+                      source: str | Path | None = None) -> tuple[str, list[str]]:
+    """Song audio + ``Artist_Title.rs2dlc`` in ``folder``; (file name, warnings)."""
+    folder = Path(folder)
+    warns = []
+    if mix is not None:
+        audio, note = write_song_audio(folder, mix, sr, shift), ""
+    else:
+        audio, note = song_audio_for(folder, shift, source)
+    if note:
+        warns.append(note)
+    path = _sibling("dlcproject").write(folder, charter=charter, meta=meta, audio=audio)
+    who = f" (author {charter})" if charter else " (author: DLC Builder's charter name — set charter in stems2midi.ini)"
+    warns.append(f"DLC Builder project: {path.name}{who} — open it in DLC Builder, add tones, build.")
+    return path.name, warns
+
+
+def _audio_seconds(path: Path) -> float:
+    try:
+        import soundfile as sf
+        return float(sf.info(str(path)).duration)
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def _fetch_meta(folder: Path, input_path: Path, opts: Options, res: Result, log=None) -> None:
+    """Cover + lyrics into ``folder``; fills missing album/year and, without
+    --lyrics, uses the lyrics found."""
+    mf = _sibling("metafetch")
+    mf.set_version(__version__)
+    guess = _sibling("rsexport").guess_meta(input_path.name)
+    artist = opts.meta.get("artist") or guess.get("artist") or ""
+    title = opts.meta.get("title") or guess.get("title") or ""
+    got = mf.fetch(folder, artist, title, opts.meta.get("album") or "", _audio_seconds(input_path),
+                   log=log or (lambda m: None))
+    res.fetched = got
+    for n in got["notes"]:
+        res.warnings.append(f"Web lookup: {n}.")
+    if got["album"] and not opts.meta.get("album"):
+        opts.meta["album"] = got["album"]
+    if got["year"] and not opts.meta.get("year"):
+        opts.meta["year"] = got["year"]
+    if got["lyrics"] and not opts.lyrics:
+        text = (folder / got["lyrics"]).read_text(encoding="utf-8")
+        if text.strip():
+            opts.lyrics = text
+            res.warnings.append(f"Lyrics from the web ({got['lyrics']}) lined up with the vocals — check them; "
+                                f"edit the file and run on the folder with --lyrics to redo.")
+
+
 def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                  opts: Options | None = None, progress: ProgressCB = None,
                  _model=None) -> Result:
@@ -1155,8 +1292,13 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
         if progress:
             progress(max(0.0, min(1.0, frac)), stage, msg)
 
+    if opts.fetch_meta:
+        report(0.005, "fetch", "Looking up album art and lyrics…")
+        _fetch_meta(out, input_path, opts, res, log=lambda m: report(0.005, "fetch", m))
+
     stems_audio: dict[str, np.ndarray] = {}
     sr = 44100
+    weak_hint = None
     if opts.skip_separation:
         report(0.01, "decode", "Decoding audio…")
         name = (opts.midi_stems or ("bass",))[0]
@@ -1185,6 +1327,11 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
         missing = [s for s in opts.midi_stems if s not in stems_audio]
         if missing:
             res.warnings.append(f"Model '{opts.model}' has no stem(s) {missing}; skipped for MIDI.")
+        if opts.suggest and "bass" in opts.midi_stems:
+            try:
+                weak_hint = _sibling("suggest").weak_stem(stems_audio, sr, opts.model)
+            except Exception as e:  # noqa: BLE001 — hints are extras
+                res.warnings.append(f"Bass stem check not done: {e}")
 
     # ── tempo from the full mix (sum of stems == mix) ────────────────────
     midi_targets = [s for s in opts.midi_stems if s in stems_audio]
@@ -1458,19 +1605,14 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
             if opts.suggest and stem == "bass" and payload["notes"]:
                 try:
                     sg = _sibling("suggest")
-                    hints = sg.suggest(stems_audio[stem], sr, pre_only or payload["notes"], bpm,
-                                       payload.get("review"),
-                                       used={"sustained": opts.sustained, "only": opts.only,
-                                             "bpm": opts.bpm, "notes_from": opts.notes_from})
+                    hints = ([weak_hint] if weak_hint else []) + sg.suggest(
+                        stems_audio[stem], sr, pre_only or payload["notes"], bpm, payload.get("review"),
+                        used={"sustained": opts.sustained, "only": opts.only,
+                              "bpm": opts.bpm, "notes_from": opts.notes_from})
+                    weak_hint = None
                     # a 5-string bass is already suggested by the tuning check
                     if hints:
-                        res.suggestions = hints
-                        res.rerun = sg.command(hints, str(Path(out).resolve()),
-                                               f"--shift {opts.rs_shift:g}" if opts.rs_shift else "")
-                        payload["suggestions"] = hints
-                        for h in hints:
-                            res.warnings.append(f"Worth trying {sg._arg(h)}: {h['why']}.")
-                        res.warnings.append(f"Re-run on the result folder (no new separation): {res.rerun}")
+                        _add_hints(res, hints, out, opts, input_path, payload)
                         if stem in res.review:
                             rp = out / res.review[stem]
                             rp.write_text(rp.read_text(encoding="utf-8") + sg.report(hints, res.rerun),
@@ -1516,6 +1658,21 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                                         "them in UltraStar Creator.")
             except Exception as e:  # noqa: BLE001 — never fail the job over the lyrics
                 res.warnings.append(f"Lyrics not lined up: {e}")
+
+    if weak_hint:                      # no notes to look at: the stem check alone
+        _add_hints(res, [weak_hint], out, opts, input_path)
+
+    if opts.dlc_project and (res.rsxml or res.lyrics):
+        report(0.998, "project", "Writing the DLC Builder project…")
+        mix = np.sum(list(stems_audio.values()), axis=0) if not opts.skip_separation and stems_audio else None
+        try:
+            # with --skip-separation the input is a stem, not the song: use an earlier
+            # song*.ogg or the folder's stems (bass + backing) instead
+            res.project, warns = write_dlc_project(out, opts.charter, opts.meta, opts.rs_shift, mix=mix, sr=sr,
+                                                   source=None if opts.skip_separation else input_path)
+            res.warnings.extend(warns)
+        except Exception as e:  # noqa: BLE001 — never fail the job over the extra file
+            res.warnings.append(f"DLC Builder project not written: {e}")
 
     res.elapsed = round(time.monotonic() - t0, 2)
     (out / "stems2midi.json").write_text(json.dumps(asdict(res), indent=2), encoding="utf-8")
@@ -1643,6 +1800,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--keep-accents", action="store_true",
                    help="keep accented letters in the lyrics files and the XML's title/artist/album "
                         "(default: ã → a, ç → c — what EOF, Rocksmith and DLC Builder take)")
+    p.add_argument("--charter", default="",
+                   help="your charter name for the DLC Builder project (author, DLC key), e.g. ALSRC "
+                        "(stems2midi.ini: charter = ALSRC)")
+    p.add_argument("--no-dlc-project", dest="dlc_project", action="store_false",
+                   help="don't write the DLC Builder project (Artist_Title.rs2dlc) and song.ogg")
+    p.add_argument("--fetch-meta", action="store_true",
+                   help="look up the album art (iTunes / Cover Art Archive → cover.jpg) and the lyrics "
+                        "(LRCLIB → lyrics.txt, lined up when --lyrics isn't given); also fills album/year")
     p.add_argument("--no-review", dest="review", action="store_false",
                    help="don't check the transcription against the stem (bass.review.txt)")
     p.add_argument("--no-rs-xml", dest="rs_xml", action="store_false",
@@ -1782,6 +1947,31 @@ def main(argv: list[str] | None = None) -> int:
                               .get("source") or "").name
         except (OSError, ValueError):
             pass
+        if _truthy(args.fetch_meta):
+            mf = _sibling("metafetch")
+            mf.set_version(__version__)
+            guess = _sibling("rsexport").guess_meta(audio_name or folder.name.removesuffix("_stems"))
+            got = mf.fetch(folder, meta.get("artist") or guess.get("artist") or "",
+                           meta.get("title") or guess.get("title") or "", meta.get("album") or "", log=print)
+            for n in got["notes"]:
+                print(f"Web lookup: {n}")
+            for k in ("album", "year"):
+                if got[k] and not meta.get(k):
+                    meta[k] = got[k]
+            if got["lyrics"] and not lyrics_text and voc_path is not None \
+                    and not (folder / lyr_mod.JSON_NAME).is_file():
+                lyrics_text = (folder / got["lyrics"]).read_text(encoding="utf-8")
+                print(f"Lyrics from the web ({got['lyrics']}) will be lined up — check them.")
+
+        def project():
+            if not _truthy(args.dlc_project):
+                return
+            try:
+                name, warns = write_dlc_project(folder, args.charter, meta, shift, source=audio_name)
+                for w in warns:
+                    print(("" if w.startswith("DLC Builder project") else "warning: ") + w)
+            except Exception as e:  # noqa: BLE001
+                print(f"warning: DLC Builder project not written: {e}")
         if lyrics_text:
             if voc_path is None:
                 build_parser().error("--lyrics: no vocals stem in this folder (run the song again with --lyrics)")
@@ -1802,6 +1992,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Lyrics written again → {info['ultrastar']}, {info['xml']}")
         if not (src.is_file() or (folder / "bass.notes.json").is_file()):
             if lyrics_text or (folder / lyr_mod.JSON_NAME).is_file():
+                project()
                 return 0
         parts = args.parts
         if str(parts or "").strip().lower() == "auto":
@@ -1849,6 +2040,7 @@ def main(argv: list[str] | None = None) -> int:
         for w in warns:
             print(("" if w.startswith(("Song parts", "Slap/pop in")) else "warning: ") + w)
         print(f"Rocksmith XML: {xml_path}")
+        project()
         return 0
 
     if args.model not in MODELS and not args.repo:
@@ -1893,6 +2085,8 @@ def main(argv: list[str] | None = None) -> int:
         notes_from=args.notes_from, notes_use=args.notes_use, five_string=args.rs_5string or "auto",
         only=args.only, sustained=_truthy(args.sustained),
         lyrics_aligner=args.lyrics_aligner, keep_accents=_truthy(args.keep_accents),
+        charter=str(args.charter or "").strip(), dlc_project=_truthy(args.dlc_project),
+        fetch_meta=_truthy(args.fetch_meta),
     )
 
     last = {"pct": -1}
@@ -1932,6 +2126,9 @@ def main(argv: list[str] | None = None) -> int:
                 res.lyrics = _sibling("lyrics").write_outputs(
                     Path(res.out_dir), {**meta, "audio": Path(args.input).name}, shift,
                     keep_accents=opts.keep_accents)
+            if res.project:     # the song audio moves with the XML
+                res.project, _w = write_dlc_project(res.out_dir, opts.charter, opts.meta, shift,
+                                                    source=None if opts.skip_separation else args.input)
         except Exception as e:  # noqa: BLE001
             res.warnings.append(f"Rocksmith XML alignment failed: {e}")
 
@@ -1952,6 +2149,11 @@ def main(argv: list[str] | None = None) -> int:
         if res.lyrics:
             print(f"  lyrics {res.lyrics['ultrastar']} (UltraStar Creator / EOF), {res.lyrics['xml']} "
                   f"(Rocksmith vocals) — {res.lyrics['syllables']} syllables, {res.lyrics['aligner']} aligner")
+        if res.project:
+            print(f"  DLC   {'project':<18} {res.project}  (DLC Builder: open, add tones, build)")
+        for k in ("cover", "lyrics", "lrc"):
+            if res.fetched.get(k):
+                print(f"  web   {k:<18} {res.fetched[k]}")
         if res.bpm:
             print(f"  tempo {res.bpm} BPM")
         for w in res.warnings:

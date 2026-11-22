@@ -110,7 +110,15 @@ def parse_options(form: dict) -> dict:
         "only": _only(form.get("only")),
         "sustained": str(form.get("sustained", "")).lower() in ("1", "true", "on", "yes"),
         "language": _language(form.get("language")),
+        "fetch_meta": str(form.get("fetch_meta", "")).lower() in ("1", "true", "on", "yes"),
+        "charter": _charter(form.get("charter")),
     }
+
+
+def _charter(v) -> str:
+    """Charter name for the DLC Builder project: letters, digits, _ - . and spaces."""
+    v = clean_text(v, 40)
+    return re.sub(r"[^\w .-]+", "", v).strip()
 
 
 def _only(v) -> str:
@@ -251,6 +259,10 @@ def build_command(python: str, input_path: Path, out_dir: Path, opts: dict) -> l
         cmd.append(f"--only={opts['only']}")
     if opts.get("sustained"):
         cmd.append("--sustained")
+    if opts.get("fetch_meta"):
+        cmd.append("--fetch-meta")
+    if opts.get("charter"):
+        cmd.append(f"--charter={opts['charter']}")
     if opts.get("notes_from"):
         cmd.append(f"--notes-from={opts['notes_from']}")
         if opts.get("notes_use") and opts["notes_use"] != "all":
