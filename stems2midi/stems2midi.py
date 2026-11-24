@@ -47,7 +47,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.2.7"
+__version__ = "1.2.8"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -139,6 +139,7 @@ class Options:
     notes_from: str | None = None           # MusicXML/MIDI of another transcriber (AnthemScore…) for the bass
     notes_use: str = "all"                  # where: all | doubtful (bars the review flags) | "12-30, 1:02-1:30"
     notes_track: str | None = None          # Guitar Pro: track number (from 1) or name (default: the bass track)
+    sections_from: str | None = None        # Guitar Pro with one example of each part (markers) → placed on the song
     only: str | None = None                 # the bass guitar plays only here: "2:50-5:15" / "40-90" (bars)
     sustained: bool = False                 # ballad: long notes, re-plucks only with a clear level rise
     phrase_bars: int = 4                    # Rocksmith phrases (Riff Repeater units) every N bars; 0 = per section
@@ -1140,6 +1141,32 @@ def pick_engine(stem: str, engine: str, has_basic_pitch: bool) -> str:
     return "basic-pitch"
 
 
+def _gp_tuning(gp: dict, tab_tuning, auto_tuning: bool, res: Result):
+    """Track note + the Guitar Pro file's tuning for the tab (its strings kept).
+    Returns (tab_tuning, gp_strings, auto_tuning)."""
+    gp_strings = None
+    res.warnings.append(
+        f"Guitar Pro track {gp['track_no']} '{gp['track']}'"
+        + (f" (of {len(gp['tracks'])}: {', '.join(gp['tracks'])}; --track to choose)"
+           if len(gp["tracks"]) > 1 else "")
+        + (" — written an octave up (guitar tuning), moved down." if gp.get("octave") else ".")
+        + (f" {gp['muted']} dead note(s) left out." if gp.get("muted") else "")
+        + (" Its repeat signs are read once (Guitar Pro 6–8 files): if the song plays them, "
+           "save the tab as .gp5 (Guitar Pro / TuxGuitar) and use that." if gp.get("repeats_once")
+           else ""))
+    if gp.get("tuning") and (auto_tuning or (tab_tuning is not None
+                                             and list(tab_tuning.strings) == gp["tuning"])):
+        tab_tuning = _fretting().parse_tuning(gp["tuning"])
+        named = [k for k, v in _fretting().PRESETS.items() if tuple(v) == tab_tuning.strings]
+        if named:
+            tab_tuning = _fretting().parse_tuning(named[0])
+        gp_strings = tuple(gp["tuning"])
+        auto_tuning = False
+        res.warnings.append(f"Tuning from the Guitar Pro file: {tab_tuning.label()}; "
+                            f"strings and frets as in the tab.")
+    return tab_tuning, gp_strings, auto_tuning
+
+
 def _add_hints(res: Result, hints: list[dict], out: Path, opts: Options, input_path: Path,
                payload: dict | None = None) -> None:
     sg = _sibling("suggest")
@@ -1361,6 +1388,7 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
             lo, hi = PITCH_RANGES.get(stem, ("C1", "C7"))
             tab_tuning = None
             gp_strings = None          # tuning of a Guitar Pro file whose strings are kept
+            sections_info = None       # --sections-from: where each example was placed
             auto_tuning = stem == "bass" and str(opts.tuning or "").strip().lower() == "auto"
             if stem == "bass" and opts.tuning:
                 tab_tuning = _fretting().parse_tuning("4" if auto_tuning else opts.tuning)
@@ -1374,7 +1402,33 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                 report(_st + f * share, s, f"[{stem}] {m}")
 
             sub(0.0, "transcribe", f"Transcribing with {engine}…")
-            if stem == "bass" and opts.notes_from:
+            if stem == "bass" and opts.sections_from:
+                engine = "pyin+sections"
+                y_m = stems_audio[stem].mean(axis=0)
+                sub(0.05, "transcribe", f"Reading the examples in {Path(opts.sections_from).name}…")
+                raw, gp = _sibling("notesimport").read_gp(opts.sections_from, opts.notes_track)
+                tab_tuning, gp_strings, auto_tuning = _gp_tuning(gp, tab_tuning, auto_tuning, res)
+                auto = transcribe_pyin(y_m, sr, lo, hi, opts.min_note_ms,
+                                       progress=lambda f, st, m: sub(0.1 + 0.6 * f, st, m),
+                                       sustained=opts.sustained)
+                sub(0.75, "transcribe", "Finding where each example is played…")
+                gs_mod = _sibling("gpsections")
+                placed = gs_mod.place(raw, gp, y_m, sr, beats, bpm, allowed=_sibling("chart_tools").RS_SECTIONS,
+                                      onsets=stem_onsets(y_m, sr))
+                ex_notes = [Note(start=n["t"], end=n["t"] + n["d"], pitch=n["m"], tech=n.get("tech"),
+                                 legato=bool(n.get("lg")), string=n.get("s")) for n in placed["notes"]]
+                notes = merge_notes(auto, ex_notes, placed["ranges"])
+                sections_info = {"file": Path(opts.sections_from).name, "occurrences": [
+                    {k: (round(v, 3) if isinstance(v, float) else v) for k, v in o.items()}
+                    for o in placed["occurrences"]], "ratio": placed["ratio"]}
+                if placed["parts"] and not opts.parts:
+                    opts.parts = placed["parts"]        # the markers become the Rocksmith sections
+                res.warnings.append(f"{Path(opts.sections_from).name}: " + placed["report"].replace("\n", "; ")
+                                    + " — the rest is the built-in transcription.")
+                if not placed["occurrences"]:
+                    res.warnings.append("None of the examples matched the bass stem: same song / version? Same "
+                                        "tuning? Each example must start on its first beat (marker on that bar).")
+            elif stem == "bass" and opts.notes_from:
                 use = (opts.notes_use or "all").strip()
                 engine = "file" if use.lower() == "all" else "pyin+file"
                 sub(0.05, "transcribe", f"Lining up the notes of {Path(opts.notes_from).name}…")
@@ -1382,25 +1436,7 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                                                   opts.notes_track)
                 gp = imp.get("gp")
                 if gp:
-                    res.warnings.append(
-                        f"Guitar Pro track {gp['track_no']} '{gp['track']}'"
-                        + (f" (of {len(gp['tracks'])}: {', '.join(gp['tracks'])}; --track to choose)"
-                           if len(gp["tracks"]) > 1 else "")
-                        + (" — written an octave up (guitar tuning), moved down." if gp.get("octave") else ".")
-                        + (f" {gp['muted']} dead note(s) left out." if gp.get("muted") else "")
-                        + (" Its repeat signs are read once (Guitar Pro 6–8 files): if the song plays them, "
-                           "save the tab as .gp5 (Guitar Pro / TuxGuitar) and use that." if gp.get("repeats_once")
-                           else ""))
-                    if gp.get("tuning") and (auto_tuning or (tab_tuning is not None
-                                                             and list(tab_tuning.strings) == gp["tuning"])):
-                        tab_tuning = _fretting().parse_tuning(gp["tuning"])
-                        named = [k for k, v in _fretting().PRESETS.items() if tuple(v) == tab_tuning.strings]
-                        if named:
-                            tab_tuning = _fretting().parse_tuning(named[0])
-                        gp_strings = tuple(gp["tuning"])
-                        auto_tuning = False
-                        res.warnings.append(f"Tuning from the Guitar Pro file: {tab_tuning.label()}; "
-                                            f"strings and frets as in the tab.")
+                    tab_tuning, gp_strings, auto_tuning = _gp_tuning(gp, tab_tuning, auto_tuning, res)
                 if imp.get("unmatched"):
                     res.warnings.append(
                         "Where the file's notes mostly miss the bass attacks (a part missing, repeated or "
@@ -1488,6 +1524,7 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                 **({"sustained": True} if opts.sustained else {}),
                 **({"bpm_set": True} if opts.bpm else {}),
                 **({"notes_from": Path(opts.notes_from).name} if opts.notes_from else {}),
+                **({"sections_from": sections_info} if sections_info else {}),
                 **({"notes_track": opts.notes_track} if opts.notes_track else {}),
                 **({"five_string": opts.five_string} if opts.five_string != "auto" else {}),
                 **({"parts": opts.parts} if opts.parts and opts.parts.strip().lower() != "auto" else {}),
@@ -1608,7 +1645,7 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                     hints = ([weak_hint] if weak_hint else []) + sg.suggest(
                         stems_audio[stem], sr, pre_only or payload["notes"], bpm, payload.get("review"),
                         used={"sustained": opts.sustained, "only": opts.only,
-                              "bpm": opts.bpm, "notes_from": opts.notes_from})
+                              "bpm": opts.bpm, "notes_from": opts.notes_from or opts.sections_from})
                     weak_hint = None
                     # a 5-string bass is already suggested by the tuning check
                     if hints:
@@ -1771,6 +1808,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="the bass guitar plays only in these times / bars ('2:50-5:15', '40-90'); notes "
                         "elsewhere are dropped — for songs where orchestra, piano or synth bass fill the "
                         "bass stem before the bass comes in")
+    p.add_argument("--sections-from", metavar="FILE.gp5",
+                   help="Guitar Pro tab with ONE example of each part, each starting at a marker named like "
+                        "the part (intro, verse, chorus…): every example is found in the song by the bass stem "
+                        "and its notes (strings, frets, slap, hammer-ons) are used there; the markers become the "
+                        "Rocksmith sections. Elsewhere the built-in transcription stays")
     p.add_argument("--track", dest="notes_track", metavar="N|NAME",
                    help="Guitar Pro file given to --notes-from: the track to use (number from 1, or part of its "
                         "name; default: the bass track)")
@@ -1885,6 +1927,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.only and not re.fullmatch(r"[\d:.,\s-]+", args.only):
         build_parser().error("--only: times '2:50-5:15' or bar numbers '40-90'")
     reuse_beats = None
+    if args.sections_from:
+        if args.notes_from:
+            build_parser().error("--sections-from and --notes-from: use one of them")
+        if not Path(args.sections_from).is_file():
+            build_parser().error(f"--sections-from: no file {args.sections_from}")
+        if Path(args.sections_from).suffix.lower() not in _sibling("notesimport").GP_EXTS:
+            build_parser().error("--sections-from: a Guitar Pro file (.gp3/.gp4/.gp5/.gpx/.gp)")
     if args.notes_from:
         if not Path(args.notes_from).is_file():
             build_parser().error(f"--notes-from: no file {args.notes_from}")
@@ -1893,7 +1942,8 @@ def main(argv: list[str] | None = None) -> int:
                                  "or Guitar Pro (.gp3/.gp4/.gp5/.gpx/.gp)")
     # a result folder + an option that changes the notes: transcribe its bass stem again
     # (no new separation), keeping what the earlier run found (beats, slap, parts…)
-    retranscribe = [o for o, v in (("--notes-from", args.notes_from), ("--sustained", _truthy(args.sustained)),
+    retranscribe = [o for o, v in (("--notes-from", args.notes_from), ("--sections-from", args.sections_from),
+                                   ("--sustained", _truthy(args.sustained)),
                                    ("--bpm", args.bpm)) if v]
     if retranscribe and src.is_dir():
         stem = next((src / f"bass.{e}" for e in ("wav", "flac") if (src / f"bass.{e}").is_file()), None)
@@ -1911,7 +1961,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.slap and old.get("slap_sections"):
             args.slap = str(old["slap_sections"])
             print(f"Slap sections from the earlier result: {args.slap}")
-        if not args.parts and old.get("parts"):
+        if not args.parts and old.get("parts") and not args.sections_from:
             args.parts = str(old["parts"])
             print(f"Song parts from the earlier result: {args.parts}")
         if not args.only and old.get("only"):
@@ -2082,7 +2132,7 @@ def main(argv: list[str] | None = None) -> int:
         beats=reuse_beats, suggest=not args.no_suggest, notes_track=args.notes_track,
         review=args.review, lyrics=lyrics_text, language=args.language,
         phrase_bars=4 if args.phrase_bars is None else max(0, args.phrase_bars),
-        notes_from=args.notes_from, notes_use=args.notes_use, five_string=args.rs_5string or "auto",
+        notes_from=args.notes_from, notes_use=args.notes_use, sections_from=args.sections_from, five_string=args.rs_5string or "auto",
         only=args.only, sustained=_truthy(args.sustained),
         lyrics_aligner=args.lyrics_aligner, keep_accents=_truthy(args.keep_accents),
         charter=str(args.charter or "").strip(), dlc_project=_truthy(args.dlc_project),

@@ -509,6 +509,38 @@ When most bars of a song look doubtful to the review (a stem like this), it
 ranks the bars within the song instead (the worst 15 % = *likely wrong*, the
 next 15 % = *worth a check*) and says so.
 
+### One example of each part (`--sections-from`, `gpsections.py`)
+
+When the stem is hard to read but the song has few different parts, write
+**each different part once** in Guitar Pro (bass track, .gp4/.gp5; .gpx/.gp
+also read) and start each with a **marker** (Section → Marker) named like the
+part: intro, verse, chorus, bridge, solo, outro, riff… (Portuguese works too:
+refrão, verso, ponte, introdução, final). A riff that the verse just repeats
+needs writing only once; order and tempo don't matter; a part that ends
+differently can be a second example with the same name.
+
+    stems2midi "Delfins - Canção de Engate.mp3" --sections-from exemplos.gp5
+    stems2midi "Delfins - Canção de Engate_stems" --sections-from exemplos.gp5   (result folder)
+
+Each example is slid over the song beat by beat and compared with the bass
+stem (its notes on the stem's attacks with the stem sounding their pitch; the
+stem's attacks there covered); the best set of non-overlapping placements is
+kept (dynamic programming over the beats). There its notes — strings, frets,
+slap/pop, hammer-ons — replace the built-in transcription; elsewhere (fills,
+variations no example matches) the transcription stays and the review flags
+it. The beat grid is the tracked one or, when the examples fit a constant
+tempo better (a wrong tracked tempo, a stem without drums), a constant grid
+found near the tracked / the file's tempo. The marker names become the
+Rocksmith sections (unless `--parts` is given). The warnings list where each
+example was placed and which weren't found.
+
+Measured on *Canção de Engate* (Delfins; hand chart, 469 notes) with 12
+examples of 8 bars (364 notes, near-duplicate blocks of the full tab left
+out) and only a low-pass of the mix as the "stem": examples placed over 93 %
+of the song, F1 0.95 there (time error p90 23 ms), 0.88 for the whole song
+(built-in transcription alone: 0.42; the full tab: 0.99). With a wrong
+tracked tempo (117 vs 112 BPM) the constant grid takes over: 0.82.
+
 ## Review against the stem (`review.py`)
 
 After transcribing, every bar is checked against the bass stem and the bars

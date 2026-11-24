@@ -260,7 +260,9 @@ def suggest(y: np.ndarray, sr: int, notes: list[dict], bpm: float, review: list[
             out.append({"option": "--notes-from", "value": "<file.gp5|.musicxml>",
                         "why": f"{share}{weak} — a Guitar Pro tab of the song (.gp5…) or a dedicated "
                                f"transcriber (e.g. AnthemScore → MusicXML) may do better; its notes are lined "
-                               f"up with the stem (add --use doubtful to take them only in the doubtful bars)"})
+                               f"up with the stem (add --use doubtful to take them only in the doubtful bars). "
+                               f"Or write just one example of each part in Guitar Pro, each starting at a "
+                               f"marker (verse, chorus…), and use --sections-from"})
     return out
 
 

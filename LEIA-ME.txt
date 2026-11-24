@@ -127,6 +127,23 @@ NOTAS DE OUTRO TRANSCRITOR (Guitar Pro, AnthemScore, MuseScore)
     destes só são lidas uma vez).
   Nas 5 músicas com tablatura e chart feito à mão: 92–99,8 % das notas certas, cordas e
   trastes iguais ao chart.
+• UM EXEMPLO DE CADA PARTE (Guitar Pro com marcadores):  --sections-from exemplos.gp5
+  Quando a deteção falha mas a música tem poucas partes diferentes, escreva no Guitar Pro
+  (pista do baixo, .gp4/.gp5) só UMA vez cada parte diferente, cada uma a começar com um
+  marcador (Section > Marker) com o nome dela: intro, verse, chorus, bridge, solo, outro,
+  riff… (ou refrão, verso, ponte, introdução, final). Um riff que o verso repete basta
+  escrever uma vez; a ordem e o andamento não importam; um refrão com final diferente pode
+  ser outro exemplo com o mesmo nome.
+    stems2midi.bat "Delfins - Canção de Engate.mp3" --sections-from exemplos.gp5
+    stems2midi.bat "Delfins - Canção de Engate_stems" --sections-from exemplos.gp5   (pasta de resultado)
+  Cada exemplo é procurado na música inteira pelo stem do baixo (ataques e notas). Onde
+  encaixa, as notas dele (cordas, trastes, slap, hammer-ons) substituem a transcrição; onde
+  nenhum encaixa (fills, variações) fica a transcrição e a revisão assinala. Os nomes dos
+  marcadores passam a ser as secções do Rocksmith. Os avisos dizem onde cada exemplo ficou
+  e quais não foram encontrados.
+  No FeedBack: ficheiro em "Bass notes from another transcriber" + "one example of each part".
+  Teste (Canção de Engate, 12 exemplos de 8 compassos): 93 % da música coberta, 95 % das notas
+  certas aí; música toda 88 % (só a transcrição: 42 %).
 • Só parte da música a partir do ficheiro (--use):
     --use all          tudo do ficheiro (por omissão)
     --use doubtful     transcrição da ferramenta, e os compassos duvidosos da revisão vêm do ficheiro

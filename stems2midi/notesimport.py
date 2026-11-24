@@ -290,7 +290,10 @@ def read_gp(path: str | Path, track: str | int | None = None) -> tuple[list[tupl
     bass_tuning = 4 <= len(opens) <= 6 and max(opens) <= 48 and opens == sorted(set(opens))
     if not bass_tuning:
         out = [(t, d, m, {k: v for k, v in x.items() if k not in ("s", "f")}) for t, d, m, x in out]
-    return out, {"track": tr["name"], "track_no": tr["index"] + 1,
+    beats = [(float(e.get("time")), int(e.get("measure", -1))) for e in root.iter("ebeat")]
+    marks = [(str(e.get("name") or ""), float(e.get("startTime") or 0)) for e in root.iter("section")
+             if (e.get("name") or "default") != "default"]
+    return out, {"beats": beats, "sections": marks, "track": tr["name"], "track_no": tr["index"] + 1,
                  "tracks": [f"{t['index'] + 1} {t['name']}" + (" (bass)" if t["is_bass"] else "") for t in tracks],
                  "tuning": opens if bass_tuning else None, "octave": octave, "muted": muted, "capo": capo,
                  "repeats_once": single_pass}

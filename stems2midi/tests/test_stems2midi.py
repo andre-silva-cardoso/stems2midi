@@ -226,6 +226,15 @@ def test_charter_and_fetch_options():
     assert "--fetch-meta" not in cmd and not any(c.startswith("--charter") for c in cmd)
 
 
+def test_sections_option_builds_sections_from():
+    import routes
+    o = routes.parse_options({"notes_use": "sections", "notes_track": "2"})
+    o["notes_from"] = "/jobs/x/notes_from.gp5"
+    cmd = routes.build_command("python", Path("a.mp3"), Path("o"), o)
+    assert "--sections-from=/jobs/x/notes_from.gp5" in cmd and "--track=2" in cmd
+    assert not any(c.startswith(("--notes-from", "--use")) for c in cmd)
+
+
 def test_tuning_option():
     import routes
     assert routes.parse_options({})["tuning"] == "auto"

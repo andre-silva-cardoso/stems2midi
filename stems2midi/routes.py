@@ -138,6 +138,8 @@ def _notes_use(v) -> str:
         return "all"
     if v.lower() == "doubtful":
         return "doubtful"
+    if v.lower() == "sections":
+        return "sections"
     if re.fullmatch(r"[\d:.,\s-]{1,120}", v):
         return v
     raise ValueError("notes: use all, doubtful, '12-30, 45' or '1:02-1:30'")
@@ -263,7 +265,11 @@ def build_command(python: str, input_path: Path, out_dir: Path, opts: dict) -> l
         cmd.append("--fetch-meta")
     if opts.get("charter"):
         cmd.append(f"--charter={opts['charter']}")
-    if opts.get("notes_from"):
+    if opts.get("notes_from") and opts.get("notes_use") == "sections":
+        cmd.append(f"--sections-from={opts['notes_from']}")
+        if opts.get("notes_track"):
+            cmd.append(f"--track={opts['notes_track']}")
+    elif opts.get("notes_from"):
         cmd.append(f"--notes-from={opts['notes_from']}")
         if opts.get("notes_use") and opts["notes_use"] != "all":
             cmd.append(f"--use={opts['notes_use']}")
@@ -716,6 +722,10 @@ def setup(app, context):
                 shutil.rmtree(jdir, ignore_errors=True)
                 return JSONResponse({"error": "Notes file: use MusicXML (.musicxml/.xml/.mxl), MIDI (.mid) "
                                               "or Guitar Pro (.gp3/.gp4/.gp5/.gpx/.gp)"}, 400)
+            if opts.get("notes_use") == "sections" and n_ext not in (".gp3", ".gp4", ".gp5", ".gpx", ".gp"):
+                shutil.rmtree(jdir, ignore_errors=True)
+                return JSONResponse({"error": "One example of each part: use a Guitar Pro file "
+                                              "(.gp3/.gp4/.gp5/.gpx/.gp) with markers"}, 400)
             npath = jdir / ("notes_from" + n_ext)
             data = await nf.read(MAX_NOTES_FILE + 1)
             if len(data) > MAX_NOTES_FILE:

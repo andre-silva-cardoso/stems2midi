@@ -1,7 +1,7 @@
 {
   "id": "stems2midi",
   "name": "Stems → MIDI",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "private": false,
   "description": "Split a song (MP3/WAV/…) into bass, guitar and other stems with Demucs, and transcribe the bass line to MIDI.",
   "category": "creation",
