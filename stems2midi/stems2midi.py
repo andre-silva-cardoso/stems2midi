@@ -47,7 +47,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.2.8"
+__version__ = "1.2.9"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -1205,9 +1205,15 @@ def write_song_audio(folder: Path, audio: np.ndarray, sr: int, shift: float = 0.
     if peak > 0.999:
         a = a * (0.999 / peak)
     name = song_audio_name(shift)
+    # in blocks: libsndfile's Vorbis encoder crashes the whole process (segfault)
+    # when a long song is written in one call
+    block = 32768
     try:
-        sf.write(str(folder / name), a.T, sr, format="OGG", subtype="VORBIS")
+        with sf.SoundFile(str(folder / name), "w", sr, a.shape[0], format="OGG", subtype="VORBIS") as f:
+            for i in range(0, a.shape[1], block):
+                f.write(a[:, i:i + block].T)
     except Exception:  # noqa: BLE001 — libsndfile without Vorbis
+        (folder / name).unlink(missing_ok=True)
         name = name[:-4] + ".wav"
         sf.write(str(folder / name), a.T, sr, subtype="PCM_16")
     return name

@@ -83,6 +83,15 @@ def test_rewrite_keeps_what_was_set_in_dlc_builder(tmp_path):
     assert new["AudioFile"]["Path"] == "song_lead5s.ogg" and new["AlbumName"]["Value"] == "Saber a Mar"
 
 
+def test_long_song_audio_is_written_without_crashing(tmp_path):
+    # one-call Vorbis writes of a few minutes segfault libsndfile 1.2 (killed the whole run)
+    sf = pytest.importorskip("soundfile")
+    import stems2midi as s2m
+    a = np.random.default_rng(0).normal(0, 0.1, (2, 44100 * 240)).astype(np.float32)
+    name = s2m.write_song_audio(tmp_path, a, 44100, shift=5.0)
+    assert abs(sf.info(str(tmp_path / name)).duration - 245.0) < 0.1
+
+
 def test_no_xml_is_an_error(tmp_path):
     with pytest.raises(ValueError):
         dp.build(tmp_path)
