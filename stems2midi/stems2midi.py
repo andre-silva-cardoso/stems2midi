@@ -47,7 +47,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.2.6"
+__version__ = "1.2.7"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 

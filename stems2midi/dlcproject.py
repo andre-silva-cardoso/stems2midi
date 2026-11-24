@@ -45,6 +45,17 @@ def sort_value(text: str) -> str:
     return t
 
 
+def title_sort(title: str, charter: str = "") -> str:
+    """Title sort field: plain letters and the charter name at the end
+    ("Lugar ao Sol ALSRC") — DLC Builder names the .psarc from the sort
+    fields (Delfins_Lugar-ao-Sol-ALSRC_v1_p.psarc)."""
+    t = sort_value(title)
+    c = ascii_text(charter)
+    if c and not t.lower().endswith(c.lower()):
+        t = f"{t} {c}".strip()
+    return t
+
+
 def _words(text: str) -> str:
     return "".join(w[:1].upper() + w[1:] for w in re.findall(r"[A-Za-z0-9]+", ascii_text(text)))
 
@@ -161,7 +172,7 @@ def build(folder: str | Path, *, charter: str = "", meta: dict | None = None, au
     proj.update({
         "DLCKey": dlc_key(charter, artist, title),
         "ArtistName": {"Value": artist, "SortValue": sort_value(artist)},
-        "Title": {"Value": title, "SortValue": sort_value(title)},
+        "Title": {"Value": title, "SortValue": title_sort(title, charter)},
         "AlbumName": {"Value": album, "SortValue": sort_value(album)},
         "Year": year,
         "AlbumArtFile": find_cover(folder),

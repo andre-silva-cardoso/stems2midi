@@ -27,6 +27,12 @@ def _folder(tmp_path, title="Lugar ao Sol", artist="Delfins", cents=0):
     return d
 
 
+def test_title_sort_plain_with_charter_at_the_end():
+    assert dp.title_sort("Canção de Engate", "ALSRC") == "Cancao de Engate ALSRC"
+    assert dp.title_sort("Lugar ao Sol ALSRC", "ALSRC") == "Lugar ao Sol ALSRC"
+    assert dp.title_sort("Pontapés", "") == "Pontapes"
+
+
 def test_key_and_sort_fields():
     assert dp.dlc_key("ALSRC", "Delfins", "Lugar ao Sol") == "ALSRCDelfinsLugarAoSol"
     assert dp.dlc_key("", "Sétima Legião", "Noutro Lugar") == "SetimaLegiaoNoutroLugar"
@@ -43,7 +49,7 @@ def test_project_from_folder(tmp_path):
     proj = json.loads(p.read_text(encoding="utf-8"))
     assert p.name == "Delfins_Lugar-ao-Sol.rs2dlc"
     assert proj["Author"] == "ALSRC" and proj["DLCKey"] == "ALSRCDelfinsLugarAoSol"
-    assert proj["Title"] == {"Value": "Lugar ao Sol", "SortValue": "Lugar ao Sol"}
+    assert proj["Title"] == {"Value": "Lugar ao Sol", "SortValue": "Lugar ao Sol ALSRC"}
     assert proj["AlbumName"]["Value"] == "Ao Vivo" and proj["Year"] == 1996
     assert proj["AlbumArtFile"] == "cover.jpg" and proj["AudioFile"]["Path"] == "song.ogg"
     bass, voc = proj["Arrangements"]

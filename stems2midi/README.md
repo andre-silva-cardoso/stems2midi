@@ -675,7 +675,9 @@ lead-in): open the project in DLC Builder, add the tones, build. It holds:
   its settings) and a **DLC key** made of it + artist + title
   (`ALSRCDelfinsLugarAoSol`).
 * artist / title / album / year (sort fields in plain letters, a leading
-  "The" moved off — DLC Builder names the .psarc from them), `cover.jpg` when
+  "The" moved off, and the charter name at the end of the title sort —
+  DLC Builder names the .psarc from them: `Delfins_Lugar-ao-Sol-ALSRC_v1_p.psarc`;
+  `chart_tools.py dlcfix` does the same to an XML saved by EOF), `cover.jpg` when
   there is one, and the arrangements in the folder: bass, the 5-string Rhythm
   XML, `vocals_RS2.xml`. Tuning and A440/A220 come from each XML.
 * Paths relative to the project, so the folder can be moved. Running again on

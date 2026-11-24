@@ -141,9 +141,11 @@ PROJETO DO DLC BUILDER, CAPA E LETRA
   artista/título/álbum/ano, a capa (cover.jpg) e os arranjos da pasta (baixo, Rhythm de
   5 cordas, vocals_RS2.xml).
 • O seu nome de autor:  --charter ALSRC   ou uma vez no stems2midi.ini:  charter = ALSRC
-  (sem ele o DLC Builder usa o "Charter name" das definições dele). Para o nome também
-  aparecer no ficheiro .psarc, o DLC Builder 3.5+ tem nas definições uma opção para
-  acrescentar palavras ao fim do nome do pacote.
+  (sem ele o DLC Builder usa o "Charter name" das definições dele).
+• O nome do .psarc vem dos campos de ordenação (sort) do artista e do título: no projeto
+  saem sem acentos e com o seu nome no fim do título → Delfins_Lugar-ao-Sol-ALSRC_v1_p.psarc
+  O chart_tools.bat dlcfix faz o mesmo ao XML exportado pelo EOF (usa o charter do ini;
+  --charter "" para não pôr).
 • Correr outra vez na pasta (--shift, --parts, --lyrics…) atualiza o projeto e mantém o que
   mudou no DLC Builder (tons, preview, volumes). Para não o fazer: --no-dlc-project
 • Com --skip-separation (stem de outro separador) o áudio fica por indicar no DLC Builder.

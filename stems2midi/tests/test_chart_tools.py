@@ -263,3 +263,20 @@ def test_dlcfix_cli(tmp_path):
     an = root.findall(".//anchor")
     assert [(a.get("time"), a.get("fret")) for a in an] == [("1.000", "5")]
     assert root.find(".//anchors").get("count") == "1"
+
+
+def test_dlcfix_charter_ends_the_title_sort(tmp_path, monkeypatch):
+    ini = tmp_path / "s2m.ini"
+    ini.write_text("[defaults]\ncharter = ALSRC\n", encoding="utf-8")
+    monkeypatch.setenv("STEMS2MIDI_CONFIG", str(ini))
+    d = tmp_path / "Xutos & Pontapés - À minha maneira"
+    d.mkdir()
+    src = d / "PART REAL_BASS_RS2.xml"
+    src.write_text(DLC_XML, encoding="utf-8")
+    assert ct.main(["dlcfix", str(src), "--from-folder"]) == 0
+    root = ET.parse(str(d / "PART REAL_BASS_RS2.dlc.xml")).getroot()
+    assert root.findtext("title") == "A minha maneira"
+    assert root.findtext("songNameSort") == "A minha maneira ALSRC"
+    assert ct.main(["dlcfix", str(src), "--from-folder", "--charter", ""]) == 0
+    root = ET.parse(str(d / "PART REAL_BASS_RS2.dlc.xml")).getroot()
+    assert "ALSRC" not in (root.findtext("songNameSort") or "")

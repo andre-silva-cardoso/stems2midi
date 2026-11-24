@@ -852,6 +852,18 @@ def folder_meta(path: Path) -> dict:
     return {}
 
 
+def _ini_charter() -> str:
+    """charter = … from stems2midi.ini ([defaults]), or ''."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("s2m_config_ct", Path(__file__).with_name("s2m_config.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return str(mod.cli_defaults().get("charter") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def cmd_dlcfix(args) -> int:
     src = Path(args.xml)
     tree = _load(src)
@@ -862,12 +874,21 @@ def cmd_dlcfix(args) -> int:
         meta = {k: to_ascii(v) for k, v in meta.items()}
     set_metadata(root, **meta)
     changed = 0 if args.keep_accents else plain_metadata(root)
+    charter = (args.charter if args.charter is not None else _ini_charter()).strip()
+    if charter:          # the .psarc name ends with it: Artist_Title-ALSRC_v1_p.psarc
+        sort = root.find("songNameSort")
+        if sort is None:
+            sort = ET.SubElement(root, "songNameSort")
+        base = to_ascii((root.findtext("title") or "").strip())
+        c = to_ascii(charter)
+        sort.text = base if base.lower().endswith(c.lower()) else f"{base} {c}".strip()
     n = dlc_anchors(root)
     out = Path(args.output) if args.output else src.with_name(src.stem + ".dlc.xml")
     ET.indent(tree, space="  ")
     tree.write(str(out), encoding="UTF-8", xml_declaration=True)
     print(out)
     print(f"  artist: {(root.findtext('artistName') or '').strip()!r}, title: {(root.findtext('title') or '').strip()!r}"
+          + (f", title sort: {(root.findtext('songNameSort') or '').strip()!r}" if charter else "")
           + (f" ({changed} field(s) without accents)" if changed else ""))
     print(f"  {n} hand-position change(s) moved off hammer-ons/pull-offs" if n
           else "  no hand-position change on a hammer-on/pull-off")
@@ -935,6 +956,9 @@ def main(argv=None) -> int:
     dx.add_argument("--title", help="song title")
     dx.add_argument("--album", help="album name")
     dx.add_argument("--keep-accents", action="store_true", help="keep accented letters")
+    dx.add_argument("--charter", default=None,
+                    help="your charter name at the end of the title sort field, so the .psarc is named "
+                         "Artist_Title-ALSRC_v1_p.psarc (default: charter in stems2midi.ini; '' = none)")
     dx.add_argument("-o", "--output", help="output file (default: <name>.dlc.xml next to the input)")
     dx.set_defaults(func=cmd_dlcfix)
     args = p.parse_args(_cli_argv(argv))
