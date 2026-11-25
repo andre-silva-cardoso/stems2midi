@@ -1208,15 +1208,30 @@ def write_song_audio(folder: Path, audio: np.ndarray, sr: int, shift: float = 0.
     # in blocks: libsndfile's Vorbis encoder crashes the whole process (segfault)
     # when a long song is written in one call
     block = 32768
+    tmp = folder / (".part_" + name)
     try:
-        with sf.SoundFile(str(folder / name), "w", sr, a.shape[0], format="OGG", subtype="VORBIS") as f:
+        with sf.SoundFile(str(tmp), "w", sr, a.shape[0], format="OGG", subtype="VORBIS") as f:
             for i in range(0, a.shape[1], block):
                 f.write(a[:, i:i + block].T)
+        os.replace(tmp, folder / name)
     except Exception:  # noqa: BLE001 — libsndfile without Vorbis
-        (folder / name).unlink(missing_ok=True)
+        tmp.unlink(missing_ok=True)
         name = name[:-4] + ".wav"
         sf.write(str(folder / name), a.T, sr, subtype="PCM_16")
     return name
+
+
+def _complete_audio(path: Path, folder: Path, shift: float) -> bool:
+    """An earlier song*.ogg is whole: readable and as long as the stems (+ the
+    lead-in) — a run that crashed while writing it (1.2.6–1.2.8) left it cut."""
+    try:
+        import soundfile as sf
+        dur = float(sf.info(str(path)).duration)
+        ref = next((float(sf.info(str(p)).duration) for p in sorted(folder.iterdir())
+                    if p.suffix.lower() in (".wav", ".flac") and not p.stem.startswith("song")), None)
+    except Exception:  # noqa: BLE001
+        return False
+    return dur > 1.0 and (ref is None or abs(dur - (ref + shift)) < 1.0)
 
 
 def song_audio_for(folder: Path, shift: float = 0.0, source: str | Path | None = None) -> tuple[str, str]:
@@ -1226,7 +1241,7 @@ def song_audio_for(folder: Path, shift: float = 0.0, source: str | Path | None =
     folder = Path(folder)
     name = song_audio_name(shift)
     for cand in (name, name[:-4] + ".wav"):
-        if (folder / cand).is_file():
+        if (folder / cand).is_file() and _complete_audio(folder / cand, folder, shift):
             return cand, ""
     src = None
     if source:

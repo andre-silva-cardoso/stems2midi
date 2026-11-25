@@ -90,6 +90,13 @@ def test_long_song_audio_is_written_without_crashing(tmp_path):
     a = np.random.default_rng(0).normal(0, 0.1, (2, 44100 * 240)).astype(np.float32)
     name = s2m.write_song_audio(tmp_path, a, 44100, shift=5.0)
     assert abs(sf.info(str(tmp_path / name)).duration - 245.0) < 0.1
+    # a song.ogg cut short by a crash is made again from the stems
+    sf.write(str(tmp_path / "bass.wav"), a.T, 44100)
+    sf.write(str(tmp_path / "backing_no_bass.wav"), a.T, 44100)
+    sf.write(str(tmp_path / "song.ogg"), a[:, :44100 * 3].T, 44100)
+    n0, note = s2m.song_audio_for(tmp_path, 0.0)
+    assert n0 == "song.ogg" and abs(sf.info(str(tmp_path / n0)).duration - 240.0) < 0.1
+    assert not list(tmp_path.glob(".part_*"))
 
 
 def test_no_xml_is_an_error(tmp_path):
