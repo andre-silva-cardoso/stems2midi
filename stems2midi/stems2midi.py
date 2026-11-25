@@ -35,6 +35,7 @@ import argparse
 import json
 import re
 import os
+import warnings
 import logging
 import math
 import shutil
@@ -47,7 +48,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.2.9"
+__version__ = "1.2.10"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -615,11 +616,16 @@ def transcribe_pyin(y: np.ndarray, sr: int, fmin: str = "B0", fmax: str = "G4",
         lo_i = max(0, a - ctx)
         last = b == n_blocks - 1
         seg = y[lo_i: len(y) if last else a + block + ctx]
-        f0, vflag, _vprob = librosa.pyin(
-            seg, fmin=f_lo, fmax=f_hi, sr=sr, frame_length=frame, hop_length=hop,
-            fill_na=np.nan, center=True,
-            max_transition_rate=PYIN_MAX_TRANSITION,
-        )
+        # silent frames make NaNs that librosa/numba cast to int inside pyin
+        # ("RuntimeWarning: invalid value encountered in cast"): harmless — those
+        # frames come out unvoiced — so the warning isn't shown
+        with warnings.catch_warnings(), np.errstate(invalid="ignore"):
+            warnings.filterwarnings("ignore", message="invalid value encountered", category=RuntimeWarning)
+            f0, vflag, _vprob = librosa.pyin(
+                seg, fmin=f_lo, fmax=f_hi, sr=sr, frame_length=frame, hop_length=hop,
+                fill_na=np.nan, center=True,
+                max_transition_rate=PYIN_MAX_TRANSITION,
+            )
         f0 = np.where(vflag, f0, np.nan)[(a - lo_i) // hop:]
         f0_parts.append(f0 if last else f0[: block // hop])
         cb((b + 1) / n_blocks * 0.85, "transcribe", f"Tracking pitch… {int((b + 1) / n_blocks * 100)}%")
