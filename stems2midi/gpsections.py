@@ -57,6 +57,7 @@ def section_name(marker: str, allowed=None) -> str:
     unknown → riff."""
     t = unicodedata.normalize("NFKD", str(marker or "").lower())
     t = "".join(c for c in t if not unicodedata.combining(c))
+    t = re.sub(r"\(.*?\)|\[.*?\]", " ", t)          # "verse 2 (A)": the letter isn't the name
     t = re.sub(r"[#\d]+", " ", t)
     t = re.sub(r"[^a-z-]+", "", t)
     t = PT_NAMES.get(t, PT_NAMES.get(t.replace("-", ""), t.replace("-", "")))

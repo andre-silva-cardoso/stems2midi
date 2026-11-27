@@ -38,6 +38,11 @@
   partilha do Google Drive, "qualquer pessoa com o link") e atualiza a partir
   dele. O link fica guardado: da próxima vez basta ATUALIZAR.bat.
 
+.PARAMETER Roformer
+  Instala também o audio-separator, para o separador BS-RoFormer
+  (--model roformer: melhor stem do baixo). O modelo (~0,7 GB) é descarregado
+  na primeira utilização. Funciona com -Update (ATUALIZAR.bat -Roformer).
+
 .EXAMPLE
   .\install.ps1
   .\install.ps1 -Update
@@ -56,7 +61,8 @@ param(
     [switch]$Update,
     [string]$Url = "",
     [switch]$Local,
-    [string]$InstallDir = ""
+    [string]$InstallDir = "",
+    [switch]$Roformer
 )
 
 # Native tools (pip, nvidia-smi) write to stderr; with "Stop" Windows
@@ -181,6 +187,16 @@ function Py-Out([string]$py, [string]$code) {
     if ($null -eq $o) { return "" }
     return ("" + ($o | Select-Object -Last 1)).Trim()
 }
+function Install-Roformer([string]$py) {
+    Info "A instalar o audio-separator (BS-RoFormer)…"
+    & $py -m pip install "audio-separator[cpu]" audioread --disable-pip-version-check --quiet
+    if ($LASTEXITCODE -ne 0) {
+        Warn "Não consegui instalar o audio-separator — o resto funciona; --model roformer não estará disponível."
+    } else {
+        Ok "audio-separator instalado: use --model roformer (ou 'BS-RoFormer' no FeedBack). O modelo (~0,7 GB) é descarregado na 1.ª vez."
+    }
+}
+
 function Ensure-Torchaudio([string]$py) {
     $tv = Py-Out $py "import torch;print(torch.__version__)"
     if (-not $tv) { Warn "Não consegui ver a versão do torch em $py — torchaudio não verificado."; return }
@@ -336,6 +352,7 @@ if ($Update) {
         Ok "Nada a instalar"
     }
     Ensure-Torchaudio $VPy
+    if ($Roformer) { Install-Roformer $VPy }
 
     Step "3/4" "Verificação"
     $out = & $VPy $Core --check --json-progress 2>$null
@@ -502,6 +519,7 @@ if ($tag -and $tag -ne "cpu") { $extra = @("--extra-index-url", "$TorchIx/$tag")
 if ($LASTEXITCODE -ne 0) { Fail "Falhou a instalação das dependências (ver acima)." }
 Ok "Dependências instaladas"
 Ensure-Torchaudio $VPy
+if ($Roformer) { Install-Roformer $VPy }
 
 # ── 6. Verificação + teste ─────────────────────────────────────────────────
 Step "6/7" "Verificação"

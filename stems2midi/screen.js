@@ -154,7 +154,7 @@ function chipValues(sel) {
     return Array.from(root.querySelectorAll(sel + ' input:checked')).map((i) => i.value);
 }
 function updateModelChips() {
-    const six = $('#s2m-model').value === 'htdemucs_6s';
+    const six = ['htdemucs_6s', 'roformer'].includes($('#s2m-model').value);
     root.querySelectorAll('#s2m-stems input, #s2m-midi input').forEach((inp) => {
         if (inp.value === 'guitar' || inp.value === 'piano') {
             inp.disabled = !six;
@@ -216,7 +216,7 @@ async function submit() {
     if (!file) return;
     const go = $('#s2m-go');
     go.disabled = true;
-    const six = $('#s2m-model').value === 'htdemucs_6s';
+    const six = ['htdemucs_6s', 'roformer'].includes($('#s2m-model').value);
     const keep = (arr) => arr.filter((s) => six || (s !== 'guitar' && s !== 'piano'));
     const fd = new FormData();
     fd.append('file', file, file.name);

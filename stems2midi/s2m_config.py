@@ -63,6 +63,7 @@ CLI_KEYS = {
     "charter": "charter",
     "dlc_project": "dlc_project",
     "fetch_meta": "fetch_meta",
+    "gp_export": "gp_export",
 }
 
 

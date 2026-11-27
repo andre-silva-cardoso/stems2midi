@@ -217,6 +217,44 @@ def pick_track(tracks: list[dict], track: str | int | None = None) -> dict:
     return bass[0]
 
 
+def _gp_slaps(song, track_index: int) -> dict:
+    """{(measure number, 1/16 position in the bar, Guitar Pro string, fret): "slap"|"pop"}
+    — FeedBack's GP3–5 reader doesn't carry slap/pop."""
+    import guitarpro
+    out = {}
+    track = song.tracks[track_index]
+    for m in track.measures:
+        mstart = m.header.start
+        for v in m.voices:
+            for b in v.beats:
+                fx = b.effect.slapEffect
+                if fx not in (guitarpro.SlapEffect.slapping, guitarpro.SlapEffect.popping):
+                    continue
+                pos16 = int(round((b.start - mstart) / 240))
+                for n in b.notes:
+                    out[(m.header.number, pos16, n.string, n.value)] = \
+                        "slap" if fx == guitarpro.SlapEffect.slapping else "pop"
+    return out
+
+
+def _slap_key(t: float, s: int, f: int, ebeats: list, n_strings: int):
+    """The _gp_slaps key of a note at ``t`` (XML time) on Rocksmith string ``s``."""
+    downs = [(i, bt, m) for i, (bt, m) in enumerate(ebeats) if m >= 0]
+    cur = None
+    for d in downs:
+        if d[1] <= t + 0.02:
+            cur = d
+        else:
+            break
+    if cur is None:
+        return None
+    i0, t0, num = cur
+    times = [bt for bt, _m in ebeats]
+    idx = np.arange(len(times), dtype=float)
+    pos = float(np.interp(t, times, idx)) - i0
+    return (num, int(round(pos * 4)), n_strings - s, f)
+
+
 def read_gp(path: str | Path, track: str | int | None = None) -> tuple[list[tuple], dict]:
     """Bass notes of a Guitar Pro file as performed (repeats expanded):
     [(start_s, dur_s, midi, {"s", "f", "tech"?, "lg"?, "dead"?})] in the file's time
@@ -228,6 +266,7 @@ def read_gp(path: str | Path, track: str | int | None = None) -> tuple[list[tupl
     tracks = gp_tracks(path)
     tr = pick_track(tracks, track)
     single_pass = False
+    slaps = {}
     if path.suffix.lower() in (".gpx", ".gp"):
         gx = _gp2rs_gpx()
         mbars = list(gx._load_gpif(str(path)).find("MasterBars") or [])
@@ -241,7 +280,9 @@ def read_gp(path: str | Path, track: str | int | None = None) -> tuple[list[tupl
             xml = Path(files[0]).read_text(encoding="utf-8")
     else:
         gp2rs, _ = _gp2rs()
-        xml = gp2rs.convert_track(_parse_gp(path), tr["index"], 0.0, "Bass")
+        gsong = _parse_gp(path)
+        xml = gp2rs.convert_track(gsong, tr["index"], 0.0, "Bass")
+        slaps = _gp_slaps(gsong, tr["index"])
     root = ET.fromstring(xml.encode("utf-8") if isinstance(xml, str) else xml)
     opens = list(tr["tuning"])
     capo = int(tr.get("capo", 0))
@@ -258,6 +299,7 @@ def read_gp(path: str | Path, track: str | int | None = None) -> tuple[list[tupl
             low = min(cn, key=lambda x: int(x.get("string", 0)))
             raw.append((float(c.get("time")), float(low.get("sustain") or 0), low))
     raw.sort(key=lambda r: r[0])
+    ebeats = [(float(e.get("time")), int(e.get("measure", -1))) for e in root.iter("ebeat")]
     out, muted, slide_to = [], 0, False
     for k, (t, sus, el) in enumerate(raw):
         s, f = int(el.get("string", 0)), int(el.get("fret", 0))
@@ -271,6 +313,10 @@ def read_gp(path: str | Path, track: str | int | None = None) -> tuple[list[tupl
         nxt = raw[k + 1][0] if k + 1 < len(raw) else t + max(sus, 0.25)
         d = sus if sus > 0.02 else max(0.05, min(nxt - t, 0.5))
         extra = {"s": s, "f": f + capo}
+        if slaps and not el.get("slap") == "1" and not el.get("pluck") == "1":
+            tech = slaps.get(_slap_key(t, s, f, ebeats, len(opens)))
+            if tech:
+                extra["tech"] = tech
         if el.get("slap") == "1":
             extra["tech"] = "slap"
         elif el.get("pluck") == "1":

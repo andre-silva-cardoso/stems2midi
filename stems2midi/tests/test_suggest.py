@@ -71,13 +71,13 @@ def test_bass_missing_from_its_stem_suggests_another_model():
     stems = {"bass": (low * 0.03)[None, :], "guitar": (low * 0.97)[None, :],
              "drums": (rng.normal(0, 0.05, len(low)).astype(np.float32))[None, :]}
     h = sg.weak_stem(stems, SR, "htdemucs_6s")
-    assert h["option"] == "--model" and h["value"] == "htdemucs_ft" and h.get("source")
+    assert h["option"] == "--model" and h["value"] == "roformer" and h.get("source")
     assert '"guitar"' in h["why"]
-    assert sg.weak_stem(stems, SR, "htdemucs_ft")["option"] == "--skip-separation"
+    assert sg.weak_stem(stems, SR, "roformer")["option"] == "--skip-separation"
     ok = {"bass": low[None, :], "drums": stems["drums"]}
     assert sg.weak_stem(ok, SR, "htdemucs_6s") is None
     cmd = sg.command([h], "C:/out/song_stems", source="C:/m/song.mp3")
-    assert cmd.endswith('"C:/m/song.mp3" -o "C:/out/song_stems" --model htdemucs_ft')
+    assert cmd.endswith('"C:/m/song.mp3" -o "C:/out/song_stems" --model roformer')
     assert "Run the song again" in sg.report([h], cmd)
 
 

@@ -156,6 +156,22 @@ reduced to a single line (lowest note wins).
 
 ## Which model / settings (GPU)
 
+**BS-RoFormer** (`--model roformer`): the 6-stem BS-RoFormer SW (jarredou) run
+through the `audio-separator` package (`INSTALAR.bat -Roformer`, or
+`pip install "audio-separator[cpu]"` in the engine's Python). Bass SDR on
+MVSEP's multisong set: htdemucs_6s 11.4, htdemucs_ft 12.1, BS-RoFormer SW 14.6.
+The model (~0.7 GB) goes to `%LOCALAPPDATA%\stems2midi\models`
+(`$STEMS2MIDI_MODELS` or `--repo` to change). Same six stems; slower than
+Demucs and without progress during the separation. The option hints suggest
+it when the bass stem misses the song's low end or most bars look doubtful.
+
+Tested on 30 s of Delfins *Lugar ao Sol* (1:40–2:10, where htdemucs_6s put
+the thin bass in the guitar stem): bass stem's low end 53 dB under the song
+with htdemucs_6s, 3.3 dB with BS-RoFormer. On an easy excerpt (*Canção de
+Engate*, 45 s) both give the same transcription (F1 0.89 / 0.88 vs the hand
+chart). Speed on a 2-core CPU: htdemucs_6s 1.3× real time, BS-RoFormer ~10×
+(a GPU makes both fast).
+
 `htdemucs_6s` (default) is the only model with a separate guitar stem.
 For the **bass transcription** `htdemucs_ft` is a little better and `--shifts 2`
 doesn't help (note F1 vs the charts):
@@ -317,6 +333,8 @@ lead_silence = 5
 ;charter = ALSRC          ; author of the DLC Builder project (and its DLC key)
 ;fetch_meta = yes         ; look up album art + lyrics on the web (iTunes, LRCLIB)
 ;dlc_project = yes        ; write Artist_Title.rs2dlc + song.ogg next to the XML
+;gp_export = yes          ; write bass.gp5 + bass.examples.gp5
+;model = roformer         ; BS-RoFormer (needs INSTALAR.bat -Roformer)
 
 [feedback]
 ; where the installer copies the plugin
@@ -700,6 +718,20 @@ In EOF itself: select notes (drag, or Ctrl+A) → Note › Rocksmith › Toggle 
 Slap (Ctrl+Shift+S) / Pop (Ctrl+Shift+P); Edit › Selection › Conditional
 deselect (Alt+D) keeps only notes on chosen strings; Beat › Rocksmith › Place
 RS Section (Shift+S) places one section at a time.
+
+## The transcription in Guitar Pro (`gpexport.py`)
+
+Every transcription also writes **`bass.gp5`** — the whole song on the XML's
+bars (bar N = bar N in EOF, the lead-in as empty bars), the tempo bar by bar
+(whole BPM with the rounding carried over, so it doesn't drift), strings,
+frets, slap/pop and hammer-ons/pull-offs, and a marker at each part found in
+the audio ("verse 2 (A)") — and **`bass.examples.gp5`**, one example per part
+(the bars the review trusts most), each at a marker with the part's name. Fix
+them in Guitar Pro and run on the folder with `--notes-from` (whole song) or
+`--sections-from` (examples). Positions are rounded to 1/16. Read back, the
+notes land within 30 ms (median) of the transcription. `--no-gp` turns it
+off. Reading GP3–5 tabs now also keeps their slap/pop (FeedBack's reader
+doesn't carry them; `notesimport._gp_slaps`).
 
 ## DLC Builder project, album art and lyrics (`dlcproject.py`, `metafetch.py`)
 

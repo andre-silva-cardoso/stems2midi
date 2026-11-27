@@ -31,7 +31,7 @@ LRC_NAME = "lyrics.lrc"
 COVER_SIZE = 1000            # iTunes artwork size asked for (px)
 MIN_SCORE = 0.75             # artist and title must both match about this well
 
-_version = "1.2.11"
+_version = "1.3.0"
 
 
 def set_version(v: str) -> None:

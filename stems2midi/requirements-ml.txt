@@ -19,3 +19,5 @@ pyphen>=0.14
 pyguitarpro>=0.9
 # Optional polyphonic transcriber (guitar/piano MIDI); may need Python 3.10/3.11:
 # basic-pitch>=0.3
+# Optional separator BS-RoFormer (--model roformer): INSTALAR.bat -Roformer, or
+#   pip install "audio-separator[cpu]" audioread

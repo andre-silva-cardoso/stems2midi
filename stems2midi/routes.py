@@ -46,7 +46,7 @@ REQ_ML = PLUGIN_DIR / "requirements-ml.txt"
 
 AUDIO_EXTS = {".mp3", ".wav", ".flac", ".ogg", ".oga", ".m4a", ".aac", ".wma",
               ".aiff", ".aif", ".opus", ".webm", ".mp4"}
-MODELS = {"htdemucs_6s", "htdemucs", "htdemucs_ft"}
+MODELS = {"htdemucs_6s", "htdemucs", "htdemucs_ft", "roformer"}
 STEMS = {"drums", "bass", "other", "vocals", "guitar", "piano"}
 ENGINES = {"auto", "pyin", "basic-pitch"}
 DEVICES = {"auto", "cpu", "cuda", "mps"}

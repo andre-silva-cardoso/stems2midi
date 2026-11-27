@@ -92,10 +92,11 @@ SEGUNDA PASSAGEM (opções sugeridas)
     --only "..."  muitas notas em trechos onde o stem está 12+ dB mais baixo (outros instrumentos)
     --bpm N       andamento provavelmente a dobrar (baladas) ou a metade (16 avos a ~80 BPM)
     --notes-from  a revisão acha a maioria dos compassos duvidosos (ex.: pouca fundamental)
-    --model htdemucs_ft   o stem do baixo tem muito menos graves (12+ dB) do que a música: a
-                  separação pôs o baixo noutro stem (baixo "magro"/agudo tomado por guitarra,
-                  ex.: Delfins - Lugar ao Sol). Este separa outra vez (comando sobre o mp3).
-                  Se já usou htdemucs_ft: separe o baixo noutra ferramenta e transcreva o
+    --model roformer   o stem do baixo tem muito menos graves (12+ dB) do que a música (a
+                  separação pôs o baixo noutro stem: baixo "magro"/agudo tomado por guitarra,
+                  ex.: Delfins - Lugar ao Sol), ou a revisão acha a maioria dos compassos
+                  duvidosos. Separa outra vez com o BS-RoFormer (comando sobre o mp3).
+                  Se já usou o roformer: separe o baixo noutra ferramenta e transcreva o
                   ficheiro dela com --skip-separation
   São palpites: ouça antes de aplicar. Para não aparecerem: --no-suggest
     stems2midi.bat "Queen - Who Wants to Live Forever_stems" --sustained --only "2:50-5:20" --bpm 71.8
@@ -152,6 +153,31 @@ NOTAS DE OUTRO TRANSCRITOR (Guitar Pro, AnthemScore, MuseScore)
     --use doubtful     transcrição da ferramenta, e os compassos duvidosos da revisão vêm do ficheiro
     --use "12-30, 45"  esses compassos (números do EOF) do ficheiro;  ou tempos: --use "1:02-1:30"
   No fim diz que compassos vieram do ficheiro. No FeedBack: escolha ao lado do ficheiro.
+
+SEPARADOR BS-RoFormer (melhor stem do baixo)
+• Modelo mais recente que o Demucs: cerca de 3 dB melhor no baixo (comparação do MVSEP:
+  htdemucs_6s 11,4 · htdemucs_ft 12,1 · BS-RoFormer SW 14,6). Instalar uma vez:
+    INSTALAR.bat -Roformer      (ou ATUALIZAR.bat -Roformer numa instalação existente)
+  Usar:  stems2midi.bat "<música>.mp3" --model roformer    (no FeedBack: modelo "BS-RoFormer")
+  Na 1.ª vez descarrega o modelo (~0,7 GB) para %LOCALAPPDATA%\stems2midi\models.
+  Dá os mesmos 6 stems (bass, guitar, drums, vocals, piano, other). É mais lento que o Demucs
+  e não mostra progresso durante a separação. Para o tornar o modelo por omissão:
+  "model = roformer" no stems2midi.ini.
+
+GUITAR PRO DA TRANSCRIÇÃO (bass.gp5 e bass.examples.gp5)
+• Cada transcrição escreve também:
+    bass.gp5           a música toda, com os compassos iguais aos do XML / EOF (com o silêncio
+                       inicial, os primeiros compassos ficam vazios), o andamento a seguir a
+                       música, cordas, trastes, slap/pop e hammer-ons, e um marcador em cada
+                       parte encontrada no áudio ("verse 2 (A)": mesma letra = mesma música).
+    bass.examples.gp5  um exemplo de cada parte (os compassos mais fiáveis), cada um com um
+                       marcador com o nome da parte.
+• Corrija no Guitar Pro (ou TuxGuitar) e volte a correr na pasta do resultado:
+    stems2midi.bat "<música>_stems" --notes-from bass.gp5             (a música toda)
+    stems2midi.bat "<música>_stems" --sections-from bass.examples.gp5 (só os exemplos)
+  Se corrigiu o bass.gp5 / bass.examples.gp5, correr outra vez não os substitui: o novo sai
+  como "bass (new).gp5". As posições são arredondadas a semicolcheias. Para não os escrever:
+  --no-gp  (ou "gp_export = no" no stems2midi.ini).
 
 PROJETO DO DLC BUILDER, CAPA E LETRA
 • Junto do bass_RS2.xml sai um projeto do DLC Builder, "Artista_Título.rs2dlc", e o áudio

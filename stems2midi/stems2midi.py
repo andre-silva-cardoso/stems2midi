@@ -48,7 +48,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.2.11"
+__version__ = "1.3.0"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -58,7 +58,9 @@ MODELS = {
     "htdemucs_6s": "6 stems: drums, bass, other, vocals, guitar, piano",
     "htdemucs": "4 stems: drums, bass, other, vocals (fast)",
     "htdemucs_ft": "4 stems, fine-tuned (best bass/drums/vocals, ~4x slower)",
+    "roformer": "6 stems with BS-RoFormer SW (best bass; needs audio-separator, ~0.7 GB model)",
 }
+ROFORMER_MODEL = "BS-Roformer-SW.ckpt"        # audio-separator's name (jarredou's 6-stem BS-RoFormer)
 DEFAULT_MODEL = "htdemucs_6s"
 ALL_STEMS = ("drums", "bass", "other", "vocals", "guitar", "piano")
 
@@ -154,6 +156,7 @@ class Options:
     charter: str = ""                       # DLC Builder project author (charter name, e.g. ALSRC)
     dlc_project: bool = True                # write a DLC Builder project (.rs2dlc) next to the XML
     fetch_meta: bool = False                # look up album art + lyrics (iTunes / LRCLIB) into the folder
+    gp_export: bool = True                  # bass.gp5 (whole song, parts as markers) + bass.examples.gp5
 
 
 @dataclass
@@ -175,6 +178,7 @@ class Result:
     suggestions: list = field(default_factory=list)  # [{"option", "value", "why"}] worth a re-run
     rerun: str = ""                                   # the re-run command with them
     project: str = ""                                 # DLC Builder project (.rs2dlc)
+    gp: dict = field(default_factory=dict)            # "song" / "examples" → Guitar Pro 5 files
     fetched: dict = field(default_factory=dict)       # cover / lyrics files looked up on the web
 
 
@@ -194,6 +198,14 @@ def _try_version(mod: str, dist: str | None = None):
         return None
 
 
+def _dist_version(dist: str):
+    try:
+        from importlib.metadata import version
+        return str(version(dist))
+    except Exception:
+        return None
+
+
 def check_environment() -> dict:
     """Report which optional dependencies are importable and which device
     Demucs would use. Never raises."""
@@ -204,6 +216,7 @@ def check_environment() -> dict:
         "numpy": np.__version__,
         "torch": _try_version("torch"),
         "demucs": _try_version("demucs"),
+        "audio_separator": _dist_version("audio-separator"),     # not imported: it loads torch + onnxruntime
         "librosa": _try_version("librosa"),
         "soundfile": _try_version("soundfile"),
         "mido": _try_version("mido"),
@@ -347,6 +360,56 @@ def _load_demucs_model(name: str, repo: str | None = None):
     return model
 
 
+def roformer_dir(repo: str | None = None) -> Path:
+    """Where audio-separator keeps its models: --repo, $STEMS2MIDI_MODELS, or a
+    folder per user (not audio-separator's /tmp default, which gets cleared)."""
+    if repo:
+        return Path(repo)
+    env = os.environ.get("STEMS2MIDI_MODELS")
+    if env:
+        return Path(env)
+    base = os.environ.get("LOCALAPPDATA")
+    return (Path(base) / "stems2midi" / "models") if base else Path.home() / ".cache" / "stems2midi" / "models"
+
+
+def separate_roformer(input_path: str | Path, device: str = "auto", progress: ProgressCB = None,
+                      repo: str | None = None, model_file: str = ROFORMER_MODEL) -> tuple[dict, int, str]:
+    """BS-RoFormer SW (6 stems) through the audio-separator package. Same
+    return as :func:`separate`. The model (~0.7 GB) is downloaded on the first
+    run into :func:`roformer_dir`."""
+    import tempfile
+    try:
+        from audio_separator.separator import Separator
+    except ImportError as e:
+        raise RuntimeError(f"the roformer model needs the audio-separator package ({e}): run "
+                           "INSTALAR.bat -Roformer (or pip install \"audio-separator[cpu]\" audioread in the "
+                           "engine's Python)") from e
+    cb = progress or (lambda *_: None)
+    dev = resolve_device(device)
+    mdir = roformer_dir(repo)
+    mdir.mkdir(parents=True, exist_ok=True)
+    cb(0.0, "model", f"Loading BS-RoFormer ({model_file}; first run downloads ~0.7 GB to {mdir})…")
+    with tempfile.TemporaryDirectory(prefix="s2m_rof_") as tmp:
+        sep = Separator(log_level=logging.WARNING, model_file_dir=str(mdir), output_dir=tmp,
+                        output_format="WAV", sample_rate=44100)
+        sep.load_model(model_filename=model_file)
+        cb(0.05, "separate", f"Separating stems with BS-RoFormer on {dev.upper()} (no progress shown)…")
+        names = {k: k.lower() for k in ("Vocals", "Drums", "Bass", "Other", "Guitar", "Piano")}
+        files = sep.separate(str(input_path), names)
+        stems = {}
+        for f in files:
+            p = Path(f) if Path(f).is_absolute() else Path(tmp) / f
+            stem = p.stem.lower()
+            stem = next((k for k in ALL_STEMS if stem == k or f"({k})" in stem), stem)
+            stems[stem] = load_audio(p, 44100, channels=2)
+    if "bass" not in stems:
+        raise RuntimeError(f"{model_file} gave no bass stem (got {', '.join(stems) or 'nothing'})")
+    n = max(a.shape[1] for a in stems.values())
+    stems = {k: np.pad(a, ((0, 0), (0, n - a.shape[1]))) for k, a in stems.items()}
+    cb(1.0, "separate", "Separated.")
+    return stems, 44100, dev
+
+
 def separate(input_path: str | Path, model_name: str = DEFAULT_MODEL, device: str = "auto",
              shifts: int = 1, overlap: float = 0.25, progress: ProgressCB = None,
              repo: str | None = None, _model=None) -> tuple[dict, int, str]:
@@ -354,6 +417,8 @@ def separate(input_path: str | Path, model_name: str = DEFAULT_MODEL, device: st
 
     ``_model`` lets tests inject an (untrained) model without downloading weights.
     """
+    if model_name == "roformer" and _model is None:
+        return separate_roformer(input_path, device, progress, repo)
     import inspect
     import torch
     from demucs.apply import BagOfModels, apply_model
@@ -1147,6 +1212,85 @@ def pick_engine(stem: str, engine: str, has_basic_pitch: bool) -> str:
     return "basic-pitch"
 
 
+def _sha1(p: Path) -> str:
+    import hashlib
+    return hashlib.sha1(Path(p).read_bytes()).hexdigest()
+
+
+GP_SONG = "bass.gp5"
+GP_EXAMPLES = "bass.examples.gp5"
+
+
+def write_gp_files(folder: Path, payload: dict, shift: float = 0.0, meta: dict | None = None) -> tuple[dict, list]:
+    """bass.gp5 (the whole song on the XML's bars, a marker at each part) and
+    bass.examples.gp5 (one example per part, for --sections-from). Returns
+    ({"song": name, "examples": name}, warnings); never raises."""
+    try:
+        import guitarpro  # noqa: F401
+    except ImportError:
+        return {}, ["Guitar Pro files not written: PyGuitarPro isn't installed (pip install pyguitarpro)."]
+    rx = _sibling("rsexport")
+    ge = _sibling("gpexport")
+    st = _sibling("structure")
+    folder = Path(folder)
+    guess = rx.guess_meta(payload.get("source") or folder.name.removesuffix("_stems"))
+    m = {k: (meta or {}).get(k) or payload.get(k) or guess.get(k) or "" for k in ("artist", "title", "album")}
+    files, warns = {}, []
+    stamp_file = folder / ".gp_written.json"
+    try:
+        stamps = json.loads(stamp_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        stamps = {}
+
+    def target(name: str) -> Path:
+        """``name``, unless the file there was changed since this tool wrote it (your
+        corrections in Guitar Pro): then "<name> (new).gp5" beside it."""
+        p = folder / name
+        if p.is_file() and stamps.get(name) != _sha1(p):
+            warns.append(f"{name} was changed after it was written (your edits?) — kept; the new one is "
+                         f"{p.stem} (new).gp5.")
+            return folder / f"{p.stem} (new).gp5"
+        return p
+
+    def stamp(p: Path):
+        if p.name in (GP_SONG, GP_EXAMPLES):
+            stamps[p.name] = _sha1(p)
+    try:
+        bm = rx.beat_map_for(payload, shift=shift)
+        checked = payload.get("review") or []
+        segs = payload.get("parts_auto") or []
+
+        def bar_no(i):
+            return checked[i]["bar"] if 0 <= i < len(checked) and "bar" in checked[i] else None
+        markers = {}
+        if segs and checked:
+            markers = {b: t for b, t in ge.part_markers(segs, bar_no).items() if b is not None}
+        dst = target(GP_SONG)
+        info = ge.export(dst, payload, bm, shift=shift - rx.ADVANCE_S, markers=markers, meta=m)
+        stamp(dst)
+        files["song"] = dst.name
+        if segs and checked:
+            bars, mk = [], {}
+            for e in st.example_bars(segs, checked):
+                nums = [bar_no(i) for i in range(e["b0"], e["b1"]) if bar_no(i) is not None]
+                if nums:
+                    mk[nums[0]] = e["name"]
+                    bars += nums
+            if bars:
+                dst = target(GP_EXAMPLES)
+                ge.export(dst, payload, bm, shift=shift - rx.ADVANCE_S, markers=mk, bars=bars, meta=m)
+                stamp(dst)
+                files["examples"] = dst.name
+        stamp_file.write_text(json.dumps(stamps), encoding="utf-8")
+        warns.append(f"Guitar Pro: {files['song']} ({info['bars']} bars as in the XML / EOF"
+                     + (", a marker at each part" if markers else "") + ")"
+                     + (f" and {files['examples']} (one example per part)" if "examples" in files else "")
+                     + " — fix them in Guitar Pro and run on the folder with --notes-from / --sections-from.")
+    except Exception as e:  # noqa: BLE001 — an extra
+        warns.append(f"Guitar Pro files not written: {e}")
+    return files, warns
+
+
 def _gp_tuning(gp: dict, tab_tuning, auto_tuning: bool, res: Result):
     """Track note + the Guitar Pro file's tuning for the tab (its strings kept).
     Returns (tab_tuning, gp_strings, auto_tuning)."""
@@ -1682,7 +1826,8 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                     hints = ([weak_hint] if weak_hint else []) + sg.suggest(
                         stems_audio[stem], sr, pre_only or payload["notes"], bpm, payload.get("review"),
                         used={"sustained": opts.sustained, "only": opts.only,
-                              "bpm": opts.bpm, "notes_from": opts.notes_from or opts.sections_from})
+                              "bpm": opts.bpm, "notes_from": opts.notes_from or opts.sections_from,
+                              "model": None if opts.skip_separation else opts.model})
                     weak_hint = None
                     # a 5-string bass is already suggested by the tuning check
                     if hints:
@@ -1708,6 +1853,10 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                     res.warnings.extend(xml_warns)
                 except Exception as e:  # noqa: BLE001 — never fail the job over the extra file
                     res.warnings.append(f"Rocksmith XML not written: {e}")
+            if opts.gp_export and tab_tuning is not None and notes:
+                files, gwarns = write_gp_files(out, payload, opts.rs_shift, opts.meta)
+                res.gp.update(files)
+                res.warnings.extend(gwarns)
             if not notes:
                 res.warnings.append(f"No notes detected in the {stem} stem.")
 
@@ -1882,6 +2031,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--charter", default="",
                    help="your charter name for the DLC Builder project (author, DLC key), e.g. ALSRC "
                         "(stems2midi.ini: charter = ALSRC)")
+    p.add_argument("--no-gp", dest="gp_export", action="store_false",
+                   help="don't write bass.gp5 / bass.examples.gp5 (the transcription for Guitar Pro)")
     p.add_argument("--no-dlc-project", dest="dlc_project", action="store_false",
                    help="don't write the DLC Builder project (Artist_Title.rs2dlc) and song.ogg")
     p.add_argument("--fetch-meta", action="store_true",
@@ -2127,6 +2278,15 @@ def main(argv: list[str] | None = None) -> int:
         for w in warns:
             print(("" if w.startswith(("Song parts", "Slap/pop in")) else "warning: ") + w)
         print(f"Rocksmith XML: {xml_path}")
+        if _truthy(args.gp_export) and (folder / "bass.notes.json").is_file():
+            try:
+                pl = json.loads((folder / "bass.notes.json").read_text(encoding="utf-8"))
+                if pl.get("tuning"):
+                    _files, gw = write_gp_files(folder, pl, shift, meta)
+                    for w in gw:
+                        print(w)
+            except (OSError, ValueError) as e:
+                print(f"warning: Guitar Pro files not written: {e}")
         project()
         return 0
 
@@ -2173,7 +2333,7 @@ def main(argv: list[str] | None = None) -> int:
         only=args.only, sustained=_truthy(args.sustained),
         lyrics_aligner=args.lyrics_aligner, keep_accents=_truthy(args.keep_accents),
         charter=str(args.charter or "").strip(), dlc_project=_truthy(args.dlc_project),
-        fetch_meta=_truthy(args.fetch_meta),
+        fetch_meta=_truthy(args.fetch_meta), gp_export=_truthy(args.gp_export),
     )
 
     last = {"pct": -1}
@@ -2236,6 +2396,8 @@ def main(argv: list[str] | None = None) -> int:
         if res.lyrics:
             print(f"  lyrics {res.lyrics['ultrastar']} (UltraStar Creator / EOF), {res.lyrics['xml']} "
                   f"(Rocksmith vocals) — {res.lyrics['syllables']} syllables, {res.lyrics['aligner']} aligner")
+        for k, v in res.gp.items():
+            print(f"  GP    {k:<18} {v}  (Guitar Pro 5: bars as in the XML)")
         if res.project:
             print(f"  DLC   {'project':<18} {res.project}  (DLC Builder: open, add tones, build)")
         for k in ("cover", "lyrics", "lrc"):

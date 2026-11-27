@@ -55,7 +55,7 @@ SLOW_IOI_BEATS = 0.3       # median gap between notes ≤ this many beats → 16
 
 WEAK_STEM_DB = 12.0        # bass stem's low end (40-250 Hz) this much under the mix's → separation missed it
 LOW_BAND = (40.0, 250.0)
-BETTER_MODEL = "htdemucs_ft"
+BETTER_MODEL = "roformer"           # BS-RoFormer SW (audio-separator): ~3 dB better bass than htdemucs_6s
 
 HARD_SHARE = 0.5           # review: bars "likely wrong" above this share → stem hard to read
 WEAK_F0_DB = 6.0           # harmonics louder than the fundamental by this much (median)
@@ -199,8 +199,8 @@ def weak_stem(stems: dict, sr: int, model: str = "", stem: str = "bass") -> dict
         return {"option": "--model", "value": BETTER_MODEL, "source": True,
                 "why": f"the bass stem has {gap:.0f} dB less low end (40-250 Hz) than the song{where} — the "
                        f"separation missed much of the bass (a thin or high bass is often taken for guitar). "
-                       f"Separate again with the 4-stem fine-tuned model ({BETTER_MODEL}, ~4x slower), or "
-                       f"transcribe a bass stem from another separator with --skip-separation"}
+                       f"Separate again with BS-RoFormer (--model roformer; install once with INSTALAR.bat -Roformer) or "
+                       f"htdemucs_ft, or transcribe a bass stem from another separator with --skip-separation"}
     return {"option": "--skip-separation", "value": "<bass stem from another separator>", "source": True,
             "why": f"the bass stem has {gap:.0f} dB less low end (40-250 Hz) than the song{where}, even with "
                    f"{BETTER_MODEL} — separate the bass with another tool and transcribe that file"}
@@ -252,6 +252,13 @@ def suggest(y: np.ndarray, sr: int, notes: list[dict], bpm: float, review: list[
     if review and not used.get("notes_from"):
         bad = sum(b.get("level") == "bad" for b in review) / len(review)
         relative = any(b.get("relative") for b in review)     # review ranked within the song: most bars bad
+        model = used.get("model")
+        if (bad > HARD_SHARE or relative) and model and model != BETTER_MODEL \
+                and not any(h["option"] == "--model" for h in out):
+            out.append({"option": "--model", "value": BETTER_MODEL, "source": True,
+                        "why": "many bars look doubtful — a cleaner bass stem often helps: separate again with "
+                               "BS-RoFormer (--model roformer; install once with INSTALAR.bat -Roformer; about 3 dB better bass than "
+                               "the Demucs models)"})
         if bad > HARD_SHARE or relative:
             share = "most of the bars look doubtful" if relative else f"{bad:.0%} of the bars look doubtful"
             hx = harmonic_excess(y, notes)
