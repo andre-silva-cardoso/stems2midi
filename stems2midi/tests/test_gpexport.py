@@ -105,7 +105,9 @@ def test_roformer_separator_through_audio_separator(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "audio_separator", types.ModuleType("audio_separator"))
     monkeypatch.setitem(sys.modules, "audio_separator.separator", mod)
     monkeypatch.setenv("STEMS2MIDI_MODELS", str(tmp_path / "models"))
+    sf.write(str(tmp_path / "song.wav"), np.zeros((4410, 2), np.float32), 44100)
     stems, sr, dev = s2m.separate(tmp_path / "song.wav", "roformer", device="cpu")
+    assert calls["init"]["use_soundfile"] is True           # no ffmpeg needed
     assert calls["model"] == "BS-Roformer-SW.ckpt" and calls["init"]["model_file_dir"] == str(tmp_path / "models")
     assert sorted(stems) == sorted(s2m.ALL_STEMS) and stems["bass"].shape == (2, 4410) and sr == 44100
 

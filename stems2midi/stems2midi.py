@@ -48,7 +48,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -389,16 +389,28 @@ def separate_roformer(input_path: str | Path, device: str = "auto", progress: Pr
     mdir = roformer_dir(repo)
     mdir.mkdir(parents=True, exist_ok=True)
     cb(0.0, "model", f"Loading BS-RoFormer ({model_file}; first run downloads ~0.7 GB to {mdir})…")
+    class _Separator(Separator):
+        # audio-separator insists on ffmpeg only to read/write audio through pydub; we
+        # hand it a WAV and let it write with soundfile, so ffmpeg isn't needed
+        def check_ffmpeg_installed(self):
+            if shutil.which("ffmpeg"):
+                super().check_ffmpeg_installed()
+
     with tempfile.TemporaryDirectory(prefix="s2m_rof_") as tmp:
-        sep = Separator(log_level=logging.WARNING, model_file_dir=str(mdir), output_dir=tmp,
-                        output_format="WAV", sample_rate=44100)
+        cb(0.0, "decode", "Decoding audio…")
+        wav = write_audio(Path(tmp) / "input", load_audio(input_path, 44100, channels=2), 44100, "wav")
+        out_dir = Path(tmp) / "out"
+        out_dir.mkdir()
+        sep = _Separator(log_level=logging.WARNING, model_file_dir=str(mdir), output_dir=str(out_dir),
+                         output_format="WAV", sample_rate=44100, use_soundfile=True)
         sep.load_model(model_filename=model_file)
         cb(0.05, "separate", f"Separating stems with BS-RoFormer on {dev.upper()} (no progress shown)…")
         names = {k: k.lower() for k in ("Vocals", "Drums", "Bass", "Other", "Guitar", "Piano")}
-        files = sep.separate(str(input_path), names)
+        files = sep.separate(str(wav), names)
+        tmp = out_dir
         stems = {}
         for f in files:
-            p = Path(f) if Path(f).is_absolute() else Path(tmp) / f
+            p = Path(f) if Path(f).is_absolute() else Path(tmp) / Path(f).name
             stem = p.stem.lower()
             stem = next((k for k in ALL_STEMS if stem == k or f"({k})" in stem), stem)
             stems[stem] = load_audio(p, 44100, channels=2)
