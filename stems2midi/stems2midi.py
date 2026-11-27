@@ -48,7 +48,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.3.5"
+__version__ = "1.3.6"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -154,6 +154,7 @@ class Options:
     max_fret: int = 24
     suggest: bool = True                    # look for options worth a re-run (suggest.py)
     charter: str = ""                       # DLC Builder project author (charter name, e.g. ALSRC)
+    tone: str = ""                          # base tone from DLC Builder's tone collection (name / "Artist - Title - Name")
     dlc_project: bool = True                # write a DLC Builder project (.rs2dlc) next to the XML
     fetch_meta: bool = False                # look up album art + lyrics (iTunes / LRCLIB) into the folder
     gp_export: bool = True                  # bass.gp5 (whole song, parts as markers) + bass.examples.gp5
@@ -1465,19 +1466,31 @@ def song_audio_for(folder: Path, shift: float = 0.0, source: str | Path | None =
 
 def write_dlc_project(folder: str | Path, charter: str = "", meta: dict | None = None, shift: float = 0.0,
                       mix: np.ndarray | None = None, sr: int = 44100,
-                      source: str | Path | None = None) -> tuple[str, list[str]]:
-    """Song audio + ``Artist_Title.rs2dlc`` in ``folder``; (file name, warnings)."""
+                      source: str | Path | None = None, tone: str = "") -> tuple[str, list[str]]:
+    """Song audio + ``Artist_Title.rs2dlc`` in ``folder``; (file name, warnings).
+    ``tone``: a tone of DLC Builder's tone collection to use as the base tone."""
     folder = Path(folder)
     warns = []
+    dp = _sibling("dlcproject")
+    tone_entry = None
+    if str(tone or "").strip():
+        try:
+            hit = dp.find_tone(tone)
+            tone_entry = dp.tone_entry(hit)
+            warns.append(f"Base tone from DLC Builder's {hit['db']} tone collection: {hit['label']} "
+                         f"(key {tone_entry['Key']}).")
+        except ValueError as e:
+            warns.append(f"Base tone not set: {e}.")
     if mix is not None:
         audio, note = write_song_audio(folder, mix, sr, shift), ""
     else:
         audio, note = song_audio_for(folder, shift, source)
     if note:
         warns.append(note)
-    path = _sibling("dlcproject").write(folder, charter=charter, meta=meta, audio=audio)
+    path = dp.write(folder, charter=charter, meta=meta, audio=audio, tone=tone_entry)
     who = f" (author {charter})" if charter else " (author: DLC Builder's charter name — set charter in stems2midi.ini)"
-    warns.append(f"DLC Builder project: {path.name}{who} — open it in DLC Builder, add tones, build.")
+    warns.append(f"DLC Builder project: {path.name}{who} — open it in DLC Builder, "
+                 + ("check the tones, build." if tone_entry else "add tones, build."))
     return path.name, warns
 
 
@@ -1938,6 +1951,7 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
             # with --skip-separation the input is a stem, not the song: use an earlier
             # song*.ogg or the folder's stems (bass + backing) instead
             res.project, warns = write_dlc_project(out, opts.charter, opts.meta, opts.rs_shift, mix=mix, sr=sr,
+                                                   tone=opts.tone,
                                                    source=None if opts.skip_separation else input_path)
             res.warnings.extend(warns)
         except Exception as e:  # noqa: BLE001 — never fail the job over the extra file
@@ -2079,6 +2093,12 @@ def build_parser() -> argparse.ArgumentParser:
                         "(stems2midi.ini: charter = ALSRC)")
     p.add_argument("--no-gp", dest="gp_export", action="store_false",
                    help="don't write bass.gp5 / bass.examples.gp5 (the transcription for Guitar Pro)")
+    p.add_argument("--tone", default="",
+                   help="base tone of the DLC Builder project, from DLC Builder's tone collection (User tab "
+                        "first): its name or as listed there, e.g. \"bass_base\" or \"Phil Collins - Do you "
+                        "Remember - Queen 2\" (stems2midi.ini: tone = …)")
+    p.add_argument("--list-tones", nargs="?", const="", metavar="FILTER",
+                   help="list the tones of DLC Builder's tone collection (words to filter by) and exit")
     p.add_argument("--no-dlc-project", dest="dlc_project", action="store_false",
                    help="don't write the DLC Builder project (Artist_Title.rs2dlc) and song.ogg")
     p.add_argument("--fetch-meta", action="store_true",
@@ -2130,6 +2150,15 @@ def main(argv: list[str] | None = None) -> int:
     def emit(obj: dict):
         sys.stdout.write(json.dumps(obj) + "\n")
         sys.stdout.flush()
+
+    if args.list_tones is not None:
+        dp = _sibling("dlcproject")
+        hits = dp.list_tones(args.list_tones)
+        if not hits:
+            print("No tones found in " + ", ".join(str(d) for d in dp.tone_dbs()))
+        for h in hits:
+            print(f"  [{h['db']}] {h['label']}")
+        return 0
 
     if args.check:
         info = check_environment()
@@ -2251,7 +2280,8 @@ def main(argv: list[str] | None = None) -> int:
             if not _truthy(args.dlc_project):
                 return
             try:
-                name, warns = write_dlc_project(folder, args.charter, meta, shift, source=audio_name)
+                name, warns = write_dlc_project(folder, args.charter, meta, shift, source=audio_name,
+                                                tone=args.tone)
                 for w in warns:
                     print(("" if w.startswith("DLC Builder project") else "warning: ") + w)
             except Exception as e:  # noqa: BLE001
@@ -2379,6 +2409,7 @@ def main(argv: list[str] | None = None) -> int:
         only=args.only, sustained=_truthy(args.sustained),
         lyrics_aligner=args.lyrics_aligner, keep_accents=_truthy(args.keep_accents),
         charter=str(args.charter or "").strip(), dlc_project=_truthy(args.dlc_project),
+        tone=str(args.tone or "").strip(),
         fetch_meta=_truthy(args.fetch_meta), gp_export=_truthy(args.gp_export),
     )
 
@@ -2420,7 +2451,7 @@ def main(argv: list[str] | None = None) -> int:
                     Path(res.out_dir), {**meta, "audio": Path(args.input).name}, shift,
                     keep_accents=opts.keep_accents)
             if res.project:     # the song audio moves with the XML
-                res.project, _w = write_dlc_project(res.out_dir, opts.charter, opts.meta, shift,
+                res.project, _w = write_dlc_project(res.out_dir, opts.charter, opts.meta, shift, tone=opts.tone,
                                                     source=None if opts.skip_separation else args.input)
         except Exception as e:  # noqa: BLE001
             res.warnings.append(f"Rocksmith XML alignment failed: {e}")

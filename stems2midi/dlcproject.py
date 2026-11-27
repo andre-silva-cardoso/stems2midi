@@ -15,6 +15,7 @@ moved. Only the standard library is used.
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 import unicodedata
@@ -144,8 +145,85 @@ def _dash(text: str) -> str:
     return "-".join(re.findall(r"[A-Za-z0-9]+", ascii_text(text)))
 
 
+# ── tones from DLC Builder's tone collection ─────────────────────────────
+# DLC Builder keeps it in SQLite: ~/.rs2-dlcbuilder/tones/user.db (your "User"
+# tab) and official.db; table Tones(Artist, Title, Name, BassTone, Description,
+# Definition = the tone as JSON, the same shape as a project's "Tones" entries).
+
+def tone_dbs() -> list[Path]:
+    env = os.environ.get("STEMS2MIDI_TONE_DB")
+    base = Path.home() / ".rs2-dlcbuilder" / "tones"
+    return [Path(env)] if env else [base / "user.db", base / "official.db"]
+
+
+def _norm(t: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", ascii_text(t).lower())
+
+
+def list_tones(query: str = "", dbs: list[Path] | None = None, bass_only: bool = False) -> list[dict]:
+    """Tones in the collection(s): [{"db", "artist", "title", "name", "bass", "label", "definition"}],
+    filtered by the words of ``query`` (any order, in artist / title / name / description)."""
+    import sqlite3
+    words = _norm(query)
+    out = []
+    for db in dbs or tone_dbs():
+        if not Path(db).is_file():
+            continue
+        try:
+            con = sqlite3.connect(f"file:{Path(db).as_posix()}?mode=ro", uri=True)
+            rows = con.execute("SELECT artist, title, name, basstone, description, definition FROM tones").fetchall()
+            con.close()
+        except sqlite3.Error:
+            continue
+        for artist, title, name, bass, desc, definition in rows:
+            label = " - ".join(x for x in (artist, title, name) if x) + (" - Bass" if bass else "")
+            hay = set(_norm(" ".join(str(x or "") for x in (artist, title, name, desc, "bass" if bass else ""))))
+            if words and not all(w in hay or any(h.startswith(w) for h in hay) for w in words):
+                continue
+            if bass_only and not bass:
+                continue
+            out.append({"db": Path(db).stem, "artist": artist or "", "title": title or "", "name": name or "",
+                        "bass": bool(bass), "label": label, "definition": definition})
+    return out
+
+
+def find_tone(query: str, dbs: list[Path] | None = None) -> dict:
+    """The collection tone named by ``query`` — "bass_base", "Queen 2", or as DLC
+    Builder lists it: "Phil Collins - Do you Remember - Queen 2 - Bass". The
+    user collection first; an exact name / label wins; else the only match
+    (bass tones preferred). ValueError (with the candidates) otherwise."""
+    q = " ".join(_norm(query))
+    hits = list_tones(query, dbs)
+    if not hits:
+        raise ValueError(f"no tone matching {query!r} in DLC Builder's tone collection "
+                         f"({', '.join(str(d) for d in (dbs or tone_dbs()))})")
+    exact = [h for h in hits if " ".join(_norm(h["name"])) == q or " ".join(_norm(h["label"])) == q]
+    pool = exact or hits
+    for test in (lambda h: h["db"] == "user" and h["bass"], lambda h: h["db"] == "user", lambda h: h["bass"],
+                 lambda h: True):
+        sel = [h for h in pool if test(h)]
+        if len(sel) == 1:
+            return sel[0]
+        if sel:
+            pool = sel
+            break
+    raise ValueError(f"{len(pool)} tones match {query!r}: " + "; ".join(h["label"] for h in pool[:8])
+                     + (" …" if len(pool) > 8 else "") + " — give more of the name")
+
+
+def tone_entry(hit: dict) -> dict:
+    """The project "Tones" entry for a collection tone (key = its name, as DLC
+    Builder does when adding a tone from the collection)."""
+    tone = json.loads(hit["definition"])
+    key = re.sub(r"\s+", "_", hit["name"].strip()) or "bass_base"
+    tone["Key"] = key
+    tone["Name"] = key
+    tone.pop("SortOrder", None)
+    return tone
+
+
 def build(folder: str | Path, *, charter: str = "", meta: dict | None = None, audio: str = "",
-          volume: float = -7.0) -> dict:
+          volume: float = -7.0, tone: dict | None = None) -> dict:
     """The project dict for the arrangements in ``folder`` (``bass_RS2.xml``,
     ``bass5_rhythm_RS2.xml``, ``vocals_RS2.xml``). ``meta`` overrides what the
     bass XML says; ``audio`` is a file name in the folder (or a path)."""
@@ -184,16 +262,21 @@ def build(folder: str | Path, *, charter: str = "", meta: dict | None = None, au
         "Arrangements": arrs,
         "Tones": [],
     })
+    if tone:                       # the base tone of the bass (and 5-string Rhythm) arrangement
+        proj["Tones"] = [tone]
+        for a in arrs:
+            if a["Case"] == "Instrumental":
+                a["Fields"][0]["BaseTone"] = tone["Key"]
     return proj
 
 
 def write(folder: str | Path, *, charter: str = "", meta: dict | None = None, audio: str = "",
-          replace_old: bool = True) -> Path:
+          replace_old: bool = True, tone: dict | None = None) -> Path:
     """Write the project into ``folder``. An earlier project written by this
     tool is kept up to date (its IDs and the tones / preview / volume you set
     in DLC Builder stay); returns its path."""
     folder = Path(folder)
-    proj = build(folder, charter=charter, meta=meta, audio=audio)
+    proj = build(folder, charter=charter, meta=meta, audio=audio, tone=tone)
     path = folder / project_name(proj["ArtistName"]["Value"], proj["Title"]["Value"])
     old_path = path if path.is_file() else next(iter(sorted(folder.glob("*.rs2dlc"))), None)
     if old_path is not None and replace_old:
@@ -227,6 +310,10 @@ def merge(old: dict, new: dict) -> dict:
         out["AlbumArtFile"] = new["AlbumArtFile"]
     if new["AudioFile"].get("Path"):
         out["AudioFile"] = {**(old.get("AudioFile") or {}), "Path": new["AudioFile"]["Path"]}
+    # a base tone asked for now replaces the one before; tones you added in DLC Builder stay
+    if new.get("Tones"):
+        t = new["Tones"][0]
+        out["Tones"] = [x for x in (old.get("Tones") or []) if x.get("Key") != t["Key"]] + [t]
     arrs = [dict(a) for a in old.get("Arrangements") or []]
     for a in new["Arrangements"]:
         f = a["Fields"][0]
@@ -239,6 +326,8 @@ def merge(old: dict, new: dict) -> dict:
         for k in ("Tuning", "TuningPitch", "BassPicked"):
             if k in f:
                 of[k] = f[k]
+        if new.get("Tones") and a["Case"] == "Instrumental":
+            of["BaseTone"] = f["BaseTone"]
         same["Fields"] = [of]
     out["Arrangements"] = arrs
     return out

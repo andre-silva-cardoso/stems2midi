@@ -112,6 +112,7 @@ def parse_options(form: dict) -> dict:
         "language": _language(form.get("language")),
         "fetch_meta": str(form.get("fetch_meta", "")).lower() in ("1", "true", "on", "yes"),
         "charter": _charter(form.get("charter")),
+        "tone": re.sub(r"[^\w .()'&-]+", "", clean_text(form.get("tone"), 120)).strip(),
     }
 
 
@@ -270,6 +271,8 @@ def build_command(python: str, input_path: Path, out_dir: Path, opts: dict) -> l
         cmd.append("--fetch-meta")
     if opts.get("charter"):
         cmd.append(f"--charter={opts['charter']}")
+    if opts.get("tone"):
+        cmd.append(f"--tone={opts['tone']}")
     if opts.get("notes_from") and opts.get("notes_use") == "sections":
         cmd.append(f"--sections-from={opts['notes_from']}")
         if opts.get("notes_track"):

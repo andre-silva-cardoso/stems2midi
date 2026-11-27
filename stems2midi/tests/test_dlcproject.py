@@ -144,3 +144,56 @@ def test_cli_folder_mode_writes_project_with_ini_charter(tmp_path, monkeypatch):
     assert proj["Author"] == "ALSRC" and proj["Arrangements"][0]["Fields"][0]["XML"] == "bass_RS2.xml"
     assert s2m.main([str(folder), "--no-dlc-project", "--charter", "X"]) == 0
     assert json.loads((folder / "Delfins_Lugar-ao-Sol.rs2dlc").read_text(encoding="utf-8"))["Author"] == "ALSRC"
+
+
+def _tone_db(path):
+    import sqlite3
+    con = sqlite3.connect(str(path))
+    con.execute("CREATE TABLE Tones (Id INTEGER PRIMARY KEY AUTOINCREMENT, Artist VARCHAR(100), ArtistSort VARCHAR(100),"
+                " Title VARCHAR(100), TitleSort VARCHAR(100), Name VARCHAR(100), BassTone BOOLEAN,"
+                " Description VARCHAR(100), Definition VARCHAR(8000))")
+    for artist, title, name, bass in (("Phil Collins", "Do you Remember", "Queen 2", 1),
+                                      ("Phil Collins", "Do you Remember", "Queen 2", 0),
+                                      ("", "", "bass_base", 1), ("Korn", "Word Up", "Dis", 0)):
+        d = {"GearList": {"Amp": {"Type": "Amps", "KnobValues": {}, "Key": "Amp_GB50"}}, "ToneDescriptors": ["$[35720]CLEAN"],
+             "NameSeparator": " - ", "IsCustom": True, "Volume": "-18.000", "Key": name, "Name": name, "SortOrder": 3}
+        con.execute("INSERT INTO Tones (Artist, ArtistSort, Title, TitleSort, Name, BassTone, Description, Definition) "
+                    "VALUES (?,?,?,?,?,?,?,?)", (artist, artist, title, title, name, bass, "", json.dumps(d)))
+    con.commit()
+    con.close()
+
+
+def test_base_tone_from_dlc_builder_collection(tmp_path):
+    db = tmp_path / "user.db"
+    _tone_db(db)
+    hit = dp.find_tone("Phil Collins - Do you Remember - Queen 2 - Bass", [db])
+    assert hit["bass"] and hit["label"] == "Phil Collins - Do you Remember - Queen 2 - Bass"
+    assert dp.find_tone("bass_base", [db])["name"] == "bass_base"
+    assert dp.find_tone("queen 2", [db])["bass"]                         # the bass one of the two
+    with pytest.raises(ValueError):
+        dp.find_tone("Nirvana", [db])
+    d = _folder(tmp_path)
+    p = dp.write(d, charter="ALSRC", tone=dp.tone_entry(hit))
+    proj = json.loads(p.read_text(encoding="utf-8"))
+    assert proj["Tones"][0]["Key"] == "Queen_2" and "SortOrder" not in proj["Tones"][0]
+    assert proj["Arrangements"][0]["Fields"][0]["BaseTone"] == "Queen_2"
+    # later run with another tone: replaces the base tone, keeps tones added in DLC Builder
+    proj["Tones"].append({"Key": "my_lead"})
+    p.write_text(json.dumps(proj), encoding="utf-8")
+    p2 = dp.write(d, charter="ALSRC", tone=dp.tone_entry(dp.find_tone("bass_base", [db])))
+    new = json.loads(p2.read_text(encoding="utf-8"))
+    assert [t["Key"] for t in new["Tones"]] == ["Queen_2", "my_lead", "bass_base"]
+    assert new["Arrangements"][0]["Fields"][0]["BaseTone"] == "bass_base"
+    # and without --tone nothing changes
+    p3 = dp.write(d, charter="ALSRC")
+    assert json.loads(p3.read_text(encoding="utf-8"))["Arrangements"][0]["Fields"][0]["BaseTone"] == "bass_base"
+
+
+def test_cli_list_tones(tmp_path, monkeypatch, capsys):
+    import stems2midi as s2m
+    db = tmp_path / "user.db"
+    _tone_db(db)
+    monkeypatch.setenv("STEMS2MIDI_TONE_DB", str(db))
+    assert s2m.main(["--list-tones", "phil"]) == 0
+    out = capsys.readouterr().out
+    assert "[user] Phil Collins - Do you Remember - Queen 2 - Bass" in out and "Korn" not in out

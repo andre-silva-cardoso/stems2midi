@@ -740,6 +740,11 @@ Next to `bass_RS2.xml` the tool writes a **DLC Builder project**,
 `song_lead5s.ogg` with 5 s of silence added when the XML is moved for EOF's
 lead-in): open the project in DLC Builder, add the tones, build. It holds:
 
+* **Base tone** from DLC Builder's tone collection (`~/.rs2-dlcbuilder/tones/
+  user.db`, then official.db): `--tone bass_base` or as DLC Builder lists it,
+  `--tone "Phil Collins - Do you Remember - Queen 2"` (ini `tone = …`;
+  `--list-tones [words]` lists them). It becomes the bass (and 5-string
+  Rhythm) arrangement's base tone; tones added in DLC Builder stay.
 * **Version** 0.1 for a new project (the package version DLC Builder puts in
   the .psarc name; raise it there — re-runs keep it).
 * **Author** = your charter name (`--charter ALSRC`, or once in

@@ -19,6 +19,7 @@ Example::
     language = pt            ; lyrics language (default: guessed)
     phrase_bars = 4          ; Rocksmith phrases every N bars (0 = one per section)
     charter = ALSRC          ; author of the DLC Builder project (and its DLC key)
+    tone = bass_base         ; base tone of the project, from DLC Builder's tone collection
     fetch_meta = yes         ; look up album art + lyrics on the web (iTunes, LRCLIB)
     dlc_project = yes        ; write Artist_Title.rs2dlc + song.ogg next to the XML
 
@@ -64,6 +65,7 @@ CLI_KEYS = {
     "dlc_project": "dlc_project",
     "fetch_meta": "fetch_meta",
     "gp_export": "gp_export",
+    "tone": "tone",
 }
 
 
