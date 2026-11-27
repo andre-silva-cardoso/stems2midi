@@ -48,7 +48,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.3.3"
+__version__ = "1.3.4"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -388,13 +388,42 @@ def separate_roformer(input_path: str | Path, device: str = "auto", progress: Pr
     dev = resolve_device(device)
     mdir = roformer_dir(repo)
     mdir.mkdir(parents=True, exist_ok=True)
-    cb(0.0, "model", f"Loading BS-RoFormer ({model_file}; first run downloads ~0.7 GB to {mdir})…")
+    have = (mdir / model_file).is_file()
+    cb(0.0, "model", f"Loading BS-RoFormer ({model_file})…" if have else
+       f"Downloading BS-RoFormer ({model_file}, ~0.7 GB, first run only) to {mdir}…")
+
     class _Separator(Separator):
         # audio-separator insists on ffmpeg only to read/write audio through pydub; we
         # hand it a WAV and let it write with soundfile, so ffmpeg isn't needed
         def check_ffmpeg_installed(self):
             if shutil.which("ffmpeg"):
                 super().check_ffmpeg_installed()
+
+        # it checks the SHA-256 of the 0.7 GB model on every run (looks like a new
+        # download): once a file has passed, it is remembered by size + date
+        def verify_model_file_checksum(self, path, filename=None):
+            p = Path(path)
+            mark = p.with_name(p.name + ".verified")
+            final = not p.name.endswith(".partial")
+            try:
+                st = p.stat()
+                sig = f"{st.st_size}:{int(st.st_mtime)}"
+            except OSError:
+                sig = ""
+            if final and sig and mark.is_file() and mark.read_text() == sig:
+                return True
+            ok = super().verify_model_file_checksum(path, filename)
+            if ok and final and sig:
+                try:
+                    mark.write_text(sig)
+                except OSError:
+                    pass
+            return ok
+
+        def download_file_if_not_exists(self, url, output_path, verify_checksum=False):
+            if not os.path.isfile(output_path):
+                cb(0.01, "model", f"Downloading {Path(output_path).name} (first run only)…")
+            return super().download_file_if_not_exists(url, output_path, verify_checksum)
 
     with tempfile.TemporaryDirectory(prefix="s2m_rof_") as tmp:
         cb(0.0, "decode", "Decoding audio…")
