@@ -48,7 +48,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.3.1"
+__version__ = "1.3.2"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -401,7 +401,10 @@ def separate_roformer(input_path: str | Path, device: str = "auto", progress: Pr
         wav = write_audio(Path(tmp) / "input", load_audio(input_path, 44100, channels=2), 44100, "wav")
         out_dir = Path(tmp) / "out"
         out_dir.mkdir()
-        sep = _Separator(log_level=logging.WARNING, model_file_dir=str(mdir), output_dir=str(out_dir),
+        # its log lines aren't errors (e.g. "CUDAExecutionProvider not available in ONNXruntime":
+        # ONNX isn't used by RoFormer, which runs on PyTorch / the GPU) — keep only real errors
+        logging.getLogger("audio_separator").setLevel(logging.ERROR)
+        sep = _Separator(log_level=logging.ERROR, model_file_dir=str(mdir), output_dir=str(out_dir),
                          output_format="WAV", sample_rate=44100, use_soundfile=True)
         sep.load_model(model_filename=model_file)
         cb(0.05, "separate", f"Separating stems with BS-RoFormer on {dev.upper()} (no progress shown)…")
