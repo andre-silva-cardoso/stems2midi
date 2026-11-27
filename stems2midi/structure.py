@@ -210,3 +210,52 @@ def parts_spec(segs: list[dict]) -> str:
 
 def report(segs: list[dict]) -> str:
     return " · ".join(f"{s['name']} {s['number']} ({s['letter']}) {mmss(s['start'])[:-3]}" for s in segs)
+
+
+def review_text(segs: list[dict], checked: list[dict] | None = None, shift: float = 0.0) -> str:
+    """Block for bass.review.txt: the parts found in the audio with their bars
+    (numbered as in EOF) and doubtful bars, the clearest occurrence of each
+    part to write as an example (--sections-from), and the --parts spec."""
+    if not segs:
+        return ""
+    checked = checked or []
+
+    def bar_no(i):                      # 0-based bar index → number as in the review / EOF
+        return checked[i]["bar"] if 0 <= i < len(checked) and "bar" in checked[i] else i + 1
+
+    def doubt(s):
+        bs = checked[s["b0"]:s["b1"]]
+        return (sum(b.get("level") != "ok" for b in bs), float(np.mean([b.get("p", 0) for b in bs])) if bs else 0.0)
+
+    def when(t):
+        return mmss(t)[:-3] + (f" [{mmss(t + shift)[:-3]}]" if shift else "")
+
+    lines = ["", "Song parts (guessed from the audio — same letter = same music; check them):"]
+    for s in segs:
+        n_bad, _p = doubt(s)
+        lines.append(f"  {s['letter']}  {s['name'] + ' ' + str(s['number']):<12} bars {bar_no(s['b0']):>3}-"
+                     f"{bar_no(s['b1'] - 1):<4} {when(s['start'])} - {when(s['end'])}"
+                     + (f"   {n_bad} doubtful bar(s)" if checked and n_bad else ""))
+    # one example per letter: as long as its shortest occurrence (a long run of the
+    # same music is the part repeated), where the review trusts the notes most
+    best: dict[str, dict] = {}
+    for letter in dict.fromkeys(x["letter"] for x in segs):
+        occ = [x for x in segs if x["letter"] == letter]
+        size = min(x["bars"] for x in occ)
+        cands = []
+        for x in occ:
+            for b0 in range(x["b0"], x["b1"] - size + 1, size):
+                w = checked[b0:b0 + size]
+                cands.append((float(np.mean([b.get("p", 0) for b in w])) if w else 0.0, b0, x))
+        _p, b0, x = min(cands, key=lambda c: (c[0], c[1]))
+        best[letter] = {"letter": letter, "name": x["name"], "b0": b0, "b1": b0 + size}
+    lines.append("Examples to write in Guitar Pro for --sections-from (one per letter, where this transcription "
+                 "looks most reliable — e.g. take those bars from the XML in EOF and fix them; start each at a "
+                 "marker with the part's name):")
+    for e in sorted(best.values(), key=lambda x: x["b0"]):
+        t = next((c["t"] for c in checked[e["b0"]:e["b0"] + 1]), None)
+        lines.append(f"  {e['letter']} {e['name']:<8} bars {bar_no(e['b0'])}-{bar_no(e['b1'] - 1)}"
+                     + (f"  from {when(t)}" if t is not None else ""))
+    lines.append("Song parts for the Rocksmith XML (correct the names, then run on the folder with it):")
+    lines.append(f'  --parts "{parts_spec(segs)}"')
+    return "\n".join(lines) + "\n"

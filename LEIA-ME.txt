@@ -142,6 +142,9 @@ NOTAS DE OUTRO TRANSCRITOR (Guitar Pro, AnthemScore, MuseScore)
   marcadores passam a ser as secções do Rocksmith. Os avisos dizem onde cada exemplo ficou
   e quais não foram encontrados.
   No FeedBack: ficheiro em "Bass notes from another transcriber" + "one example of each part".
+  O bass.review.txt termina com as partes da música encontradas no áudio (mesma letra = mesma
+  música, compassos numerados como no EOF, compassos duvidosos de cada parte), os compassos a
+  escrever como exemplo de cada letra (onde a transcrição parece mais fiável) e o --parts.
   Teste (Canção de Engate, 12 exemplos de 8 compassos): 93 % da música coberta, 95 % das notas
   certas aí; música toda 88 % (só a transcrição: 42 %).
 • Só parte da música a partir do ficheiro (--use):

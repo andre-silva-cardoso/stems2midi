@@ -65,3 +65,17 @@ def test_parts_spec_round_trips_through_chart_tools():
     spec = st.parts_spec(segs)
     assert spec.startswith("intro=0:00.50-0:08.00, verse=0:08.00-0:24.00")
     assert [n for n, _a, _b in ct.parse_parts(spec)] == ["intro", "verse", "chorus", "verse"]
+
+
+def test_review_text_lists_parts_and_examples():
+    import structure as st
+    segs = [{"letter": "A", "name": "verse", "number": 1, "b0": 0, "b1": 8, "bars": 8, "start": 1.0, "end": 17.0},
+            {"letter": "B", "name": "chorus", "number": 1, "b0": 8, "b1": 12, "bars": 4, "start": 17.0, "end": 25.0},
+            {"letter": "A", "name": "verse", "number": 2, "b0": 12, "b1": 20, "bars": 8, "start": 25.0, "end": 41.0}]
+    checked = [{"bar": i + 3, "t": 1.0 + 2 * i, "p": 0.9 if i < 4 else 0.1, "level": "bad" if i < 4 else "ok"}
+               for i in range(20)]
+    txt = st.review_text(segs, checked, 5.0)
+    assert "A  verse 1      bars   3-10" in txt and "4 doubtful bar(s)" in txt
+    assert "A verse    bars 15-22" in txt         # verse 2: verse 1 has 4 doubtful bars
+    assert "B chorus   bars 11-14" in txt
+    assert '--parts "verse=0:01.00-0:17.00, chorus=0:17.00-0:25.00, verse=0:25.00-0:41.00"' in txt

@@ -48,7 +48,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.2.10"
+__version__ = "1.2.11"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -1654,8 +1654,18 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
                         for b in checked:
                             b["bar"] = 1 + int(np.argmin(np.abs(np.array(xd) - (b["t"] + opts.rs_shift))))
                     payload["review"] = checked
+                    rtext = rv.report(checked, opts.rs_shift)
+                    try:            # the song's parts, to pick the examples for --sections-from
+                        segs = payload.get("parts_auto")
+                        if segs is None:
+                            sub(0.995, "review", "Finding the song parts…")
+                            segs = auto_parts(mix_mono, sr, payload)
+                            payload["parts_auto"] = segs
+                        rtext += _sibling("structure").review_text(segs, checked, opts.rs_shift)
+                    except Exception as e:  # noqa: BLE001 — an extra
+                        log.debug("song parts for the review: %s", e)
                     rpath = out / f"{stem}.review.txt"
-                    rpath.write_text(rv.report(checked, opts.rs_shift), encoding="utf-8")
+                    rpath.write_text(rtext, encoding="utf-8")
                     res.review[stem] = rpath.name
                     nb = sum(b["level"] == "bad" for b in checked)
                     nc = sum(b["level"] == "check" for b in checked)

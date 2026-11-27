@@ -511,6 +511,12 @@ next 15 % = *worth a check*) and says so.
 
 ### One example of each part (`--sections-from`, `gpsections.py`)
 
+`bass.review.txt` ends with the song's parts guessed from the audio (same
+letter = same music, bars numbered as in EOF, doubtful bars per part), the
+bars to write as the example of each letter (as long as its shortest
+occurrence, where the review trusts the transcription most) and the
+`--parts` spec to correct and reuse.
+
 When the stem is hard to read but the song has few different parts, write
 **each different part once** in Guitar Pro (bass track, .gp4/.gp5; .gpx/.gp
 also read) and start each with a **marker** (Section → Marker) named like the
