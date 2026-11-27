@@ -6,7 +6,8 @@ the song audio, the album art and the arrangements found in the folder
 (bass, 5-string Rhythm, vocals). Tones are left to DLC Builder (it makes the
 base tone) or to you (Import tones).
 
-The format is DLC Builder's project JSON ("Version": "2", as DLC Builder
+The format is DLC Builder's project JSON ("Version" is the package version,
+0.1 for a new project — DLC Builder puts it in the .psarc name; as DLC Builder
 3.x saves it). Paths are relative to the project file, so the folder can be
 moved. Only the standard library is used.
 """
@@ -21,7 +22,8 @@ import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-PROJECT_VERSION = "2"
+PROJECT_VERSION = "0.1"      # the package version of a new project (you raise it in DLC Builder)
+OLD_DEFAULT_VERSION = "2"    # what 1.2.6–1.3.4 wrote
 AUDIO_EXTS = (".wav", ".ogg", ".wem")          # what DLC Builder takes as song audio
 COVER_NAMES = ("cover.jpg", "cover.jpeg", "cover.png", "cover.dds")
 
@@ -210,7 +212,10 @@ def merge(old: dict, new: dict) -> dict:
     ``new``; IDs, tones, preview, volumes, ignored issues and anything the
     user added (other arrangements) from ``old``."""
     out = dict(old)
-    for k in ("Version", "ArtistName", "Title", "AlbumName"):
+    # the package version is yours (DLC Builder); only the old default is replaced
+    out["Version"] = new["Version"] if str(old.get("Version") or OLD_DEFAULT_VERSION) == OLD_DEFAULT_VERSION \
+        else old["Version"]
+    for k in ("ArtistName", "Title", "AlbumName"):
         out[k] = new[k]
     if new.get("Author"):
         out["Author"] = new["Author"]

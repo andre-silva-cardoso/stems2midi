@@ -193,6 +193,7 @@ PROJETO DO DLC BUILDER, CAPA E LETRA
   o build. Leva: autor (o seu nome de charter), chave DLC (ALSRC + artista + título),
   artista/título/álbum/ano, a capa (cover.jpg) e os arranjos da pasta (baixo, Rhythm de
   5 cordas, vocals_RS2.xml).
+• Versão do pacote: 0.1 num projeto novo (sobe-a no DLC Builder; correr outra vez mantém-na).
 • O seu nome de autor:  --charter ALSRC   ou uma vez no stems2midi.ini:  charter = ALSRC
   (sem ele o DLC Builder usa o "Charter name" das definições dele).
 • O nome do .psarc vem dos campos de ordenação (sort) do artista e do título: no projeto

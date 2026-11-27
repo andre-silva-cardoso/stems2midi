@@ -48,6 +48,7 @@ def test_project_from_folder(tmp_path):
     p = dp.write(d, charter="ALSRC", meta={"year": "1996"}, audio="song.ogg")
     proj = json.loads(p.read_text(encoding="utf-8"))
     assert p.name == "Delfins_Lugar-ao-Sol.rs2dlc"
+    assert proj["Version"] == "0.1"
     assert proj["Author"] == "ALSRC" and proj["DLCKey"] == "ALSRCDelfinsLugarAoSol"
     assert proj["Title"] == {"Value": "Lugar ao Sol", "SortValue": "Lugar ao Sol ALSRC"}
     assert proj["AlbumName"]["Value"] == "Ao Vivo" and proj["Year"] == 1996
@@ -73,6 +74,7 @@ def test_rewrite_keeps_what_was_set_in_dlc_builder(tmp_path):
     f["BaseTone"], f["Tones"] = "Delfins_clean", ["Delfins_clean", "Delfins_drive"]
     proj["Tones"] = [{"Key": "Delfins_clean"}, {"Key": "Delfins_drive"}]
     proj["AudioPreviewFile"] = {"Path": "song_preview.wav", "Volume": -5}
+    proj["Version"] = "0.3"                                  # raised in DLC Builder
     p.write_text(json.dumps(proj), encoding="utf-8")
     p2 = dp.write(d, charter="ALSRC", meta={"album": "Saber a Mar"}, audio="song_lead5s.ogg")
     new = json.loads(p2.read_text(encoding="utf-8"))
@@ -81,6 +83,10 @@ def test_rewrite_keeps_what_was_set_in_dlc_builder(tmp_path):
     assert nf["ID"] == f["ID"] and nf["Tones"] == f["Tones"] and nf["BaseTone"] == "Delfins_clean"
     assert new["Tones"] == proj["Tones"] and new["AudioPreviewFile"]["Path"] == "song_preview.wav"
     assert new["AudioFile"]["Path"] == "song_lead5s.ogg" and new["AlbumName"]["Value"] == "Saber a Mar"
+    assert new["Version"] == "0.3"
+    proj["Version"] = "2"                                    # written by 1.2.6–1.3.4 → 0.1
+    p.write_text(json.dumps(proj), encoding="utf-8")
+    assert json.loads(dp.write(d, charter="ALSRC").read_text(encoding="utf-8"))["Version"] == "0.1"
 
 
 def test_long_song_audio_is_written_without_crashing(tmp_path):

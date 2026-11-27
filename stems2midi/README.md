@@ -740,6 +740,8 @@ Next to `bass_RS2.xml` the tool writes a **DLC Builder project**,
 `song_lead5s.ogg` with 5 s of silence added when the XML is moved for EOF's
 lead-in): open the project in DLC Builder, add the tones, build. It holds:
 
+* **Version** 0.1 for a new project (the package version DLC Builder puts in
+  the .psarc name; raise it there — re-runs keep it).
 * **Author** = your charter name (`--charter ALSRC`, or once in
   `stems2midi.ini`: `charter = ALSRC`; without it DLC Builder uses the one in
   its settings) and a **DLC key** made of it + artist + title
