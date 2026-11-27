@@ -784,7 +784,10 @@ the plugin (`plugins/stems2midi → ../../lib`), via `FEEDBACK_DIR`, or in the
 copy the Windows installer ships (`vendor/gp2rs.py`); it runs in any Python —
 no numpy, and PyGuitarPro isn't needed for writing.
 
-* Artist / title come from the file name **"Artist - Title.mp3"**; set them
+* Artist / title come from the file name **"Artist - Title.mp3"** (what stem
+  separators add — "-bass-E minor-130bpm-442hz v2", "(Bass)" — is left out,
+  also in the result folder's name; "05 - Artist - Album - Title.mp3" gives the
+  album too); set them
   (and album / year) with `--artist --title --album --year`. They are written
   **without accents** (Canção → Cancao): EOF garbles them ("CanAAo") and
   Rocksmith's font has no accented letters. `--keep-accents` keeps them;

@@ -48,7 +48,7 @@ from typing import Callable, Iterable, Optional, Sequence
 
 import numpy as np
 
-__version__ = "1.3.2"
+__version__ = "1.3.3"
 
 log = logging.getLogger("feedBack.plugin.stems2midi.core")
 
@@ -1468,7 +1468,8 @@ def _fetch_meta(folder: Path, input_path: Path, opts: Options, res: Result, log=
     guess = _sibling("rsexport").guess_meta(input_path.name)
     artist = opts.meta.get("artist") or guess.get("artist") or ""
     title = opts.meta.get("title") or guess.get("title") or ""
-    got = mf.fetch(folder, artist, title, opts.meta.get("album") or "", _audio_seconds(input_path),
+    got = mf.fetch(folder, artist, title, opts.meta.get("album") or guess.get("album") or "",
+                   _audio_seconds(input_path),
                    log=log or (lambda m: None))
     res.fetched = got
     for n in got["notes"]:
@@ -1493,7 +1494,8 @@ def run_pipeline(input_path: str | Path, out_dir: str | Path | None = None,
     input_path = Path(input_path)
     if not input_path.is_file():
         raise FileNotFoundError(input_path)
-    out = Path(out_dir) if out_dir else input_path.with_name(input_path.stem + "_stems")
+    out = Path(out_dir) if out_dir else input_path.with_name(
+        (_sibling("rsexport").clean_name(input_path.stem) or input_path.stem) + "_stems")
     out.mkdir(parents=True, exist_ok=True)
     res = Result(out_dir=str(out), model=None if opts.skip_separation else opts.model)
 

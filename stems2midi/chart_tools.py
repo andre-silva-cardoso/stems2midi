@@ -62,6 +62,18 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 
+def _rsexport():
+    """rsexport.py next to this file (by path, private name)."""
+    import importlib.util
+    mod = sys.modules.get("plugin_stems2midi_rsexport_ct")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("plugin_stems2midi_rsexport_ct", HERE / "rsexport.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["plugin_stems2midi_rsexport_ct"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
 def _fretting():
     """fretting.py next to this file, loaded by path under a private name (the
     FeedBack server imports this module too: no sys.path changes there)."""
@@ -845,7 +857,13 @@ def cmd_fourstring(args) -> int:
 
 def folder_meta(path: Path) -> dict:
     """"Artist - Title" from the folder holding the XML (EOF's Work folder)."""
-    name = Path(path).resolve().parent.name
+    name = Path(path).resolve().parent.name.removesuffix("_stems")
+    try:
+        g = _rsexport().guess_meta(name + ".x")     # "-bass-E minor-130bpm", "05 - …" handled there
+        if g.get("artist"):
+            return {k: v for k, v in g.items() if k in ("artist", "title") and v}
+    except Exception:  # noqa: BLE001
+        pass
     if " - " in name:
         a, t = name.split(" - ", 1)
         return {"artist": a.strip(), "title": t.strip()}

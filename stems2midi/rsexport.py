@@ -615,12 +615,43 @@ XML_NAME = "bass_RS2.xml"      # written next to bass.notes.json
 PHRASE_BARS = 4                # phrase (Riff Repeater unit) length in bars; sections stay longer
 
 
+_STEM_WORDS = r"(?:bass|baixo|vocals?|voz|drums?|bateria|other|guitar|guitarra|piano|instrumental|backing|stem)"
+_SEP_TAIL = [
+    # what stem separators add: "-bass-G minor-110bpm-442hz", "_bass", " (Bass)", "-E-minor-130bpm"
+    re.compile(r"\s*[-_]\s*" + _STEM_WORDS + r"\b.*$", re.I),
+    re.compile(r"\s*[(\[]\s*" + _STEM_WORDS + r"\b.*$", re.I),
+    re.compile(r"\s*[-_]\s*[A-G](?:#|b|♯|♭)?[\s_-]*(?:major|minor|maj|min|dur|moll)\b.*$", re.I),
+    re.compile(r"\s*[-_]\s*\d{2,3}(?:\.\d+)?\s*bpm\b.*$", re.I),
+    re.compile(r"\s*[-_]\s*\d{3}\s*hz\b.*$", re.I),
+]
+
+
+def clean_name(stem: str) -> str:
+    """A song's file name without what stem separators / transcribers add:
+    "Delfins - Bandeira-bass-E minor-130bpm-442hz v2" → "Delfins - Bandeira"."""
+    s = str(stem or "").strip()
+    head, sep, tail = s.partition(" - ")
+    if not sep:
+        head, tail = "", s
+    for rx in _SEP_TAIL:
+        cut = rx.sub("", tail).strip()
+        if cut:
+            tail = cut
+    return f"{head} - {tail}" if sep else tail
+
+
 def guess_meta(name: str) -> dict:
-    """"Artist - Title.mp3" → {"artist": "Artist", "title": "Title"}."""
-    stem = Path(str(name or "")).stem.strip()
-    if " - " in stem:
-        artist, title = stem.split(" - ", 1)
-        return {"artist": artist.strip(), "title": title.strip()}
+    """"Artist - Title.mp3" → {"artist": "Artist", "title": "Title"} (what stem
+    separators add to the name — "-bass-E minor-130bpm" — left out)."""
+    stem = clean_name(Path(str(name or "")).stem.strip())
+    parts = [p.strip() for p in stem.split(" - ")]
+    if len(parts) >= 3 and re.fullmatch(r"\d{1,3}", parts[0]):
+        # "05 - Artist - Album - Title" (a ripped CD): track number out, album kept
+        parts = parts[1:]
+        if len(parts) == 3:
+            return {"artist": parts[0], "album": parts[1], "title": parts[2]}
+    if len(parts) >= 2:
+        return {"artist": parts[0], "title": " - ".join(parts[1:])}
     return {"artist": "", "title": stem}
 
 

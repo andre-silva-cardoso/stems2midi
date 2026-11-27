@@ -256,3 +256,17 @@ def test_five_string_part_also_as_rhythm(tmp_path):
     few["tuning"] = {"strings": [23, 28, 33, 38, 43], "offsets": [0, 0, 0, 0, 0]}
     few["notes"][0].update(s=4, f=1)
     assert not rx.wants_rhythm5(few) and rx.wants_rhythm5(few, "rhythm")
+
+
+def test_names_without_what_stem_separators_add():
+    import rsexport as rx
+    assert rx.guess_meta("Delfins - Bandeira-bass-E minor-130bpm-442hz v2.musicxml") == \
+        {"artist": "Delfins", "title": "Bandeira"}
+    assert rx.guess_meta("Delfins - Bandeira-bass-E-minor-130bpm.mp3")["title"] == "Bandeira"
+    assert rx.clean_name("Delfins - 1 lugar ao sol-bass-G minor-110bpm-442hz") == "Delfins - 1 lugar ao sol"
+    assert rx.clean_name("Queen - Who Wants to Live Forever (Bass)") == "Queen - Who Wants to Live Forever"
+    assert rx.guess_meta("Jay-Z - 99 Problems.mp3") == {"artist": "Jay-Z", "title": "99 Problems"}
+    assert rx.guess_meta("a-ha - Take On Me.wav") == {"artist": "a-ha", "title": "Take On Me"}
+    assert rx.guess_meta("05 - Sétima Legião - Auto de Fé - Noutro Lugar.mp3") == \
+        {"artist": "Sétima Legião", "album": "Auto de Fé", "title": "Noutro Lugar"}
+    assert rx.guess_meta("Band - Song - Live 1986.mp3") == {"artist": "Band", "title": "Song - Live 1986"}

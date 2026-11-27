@@ -179,6 +179,13 @@ GUITAR PRO DA TRANSCRIÇÃO (bass.gp5 e bass.examples.gp5)
   como "bass (new).gp5". As posições são arredondadas a semicolcheias. Para não os escrever:
   --no-gp  (ou "gp_export = no" no stems2midi.ini).
 
+NOMES DOS FICHEIROS
+• Artista e título vêm do nome do ficheiro "Artista - Título.mp3". O que os separadores na web
+  acrescentam é ignorado: "Delfins - Bandeira-bass-E minor-130bpm-442hz v2.m4a" → Delfins /
+  Bandeira (também na pasta do resultado, "Delfins - Bandeira_stems", e no projeto do DLC
+  Builder). "05 - Artista - Álbum - Título.mp3" (CD ripado) → artista, álbum e título.
+  Para outro nome: --artist "…" --title "…"
+
 PROJETO DO DLC BUILDER, CAPA E LETRA
 • Junto do bass_RS2.xml sai um projeto do DLC Builder, "Artista_Título.rs2dlc", e o áudio
   para ele (song.ogg; com lead_silence 5: song_lead5s.ogg, com os 5 s de silêncio). Abra o

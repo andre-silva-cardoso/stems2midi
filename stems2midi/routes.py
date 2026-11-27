@@ -164,6 +164,11 @@ def clean_text(v, n: int = 120) -> str:
 
 def meta_from_filename(name: str) -> dict:
     """"Delfins - Canção de Engate.mp3" → artist/title (keeps accents)."""
+    try:                                    # "-bass-E minor-130bpm…" of stem separators out
+        g = _rsexport().guess_meta(clean_text(Path(str(name or "")).name, 260))
+        return {k: v[:120] for k, v in g.items() if v}
+    except Exception:  # noqa: BLE001
+        pass
     stem = clean_text(Path(str(name or "")).stem, 200)
     if " - " in stem:
         a, t = stem.split(" - ", 1)
